@@ -12,11 +12,13 @@ interface Props {
 export default function RouteButton({ activeCount, vehicleId }: Props) {
   const [mode, setMode] = useState<RouteMode>("pickup");
   const [loading, setLoading] = useState(false);
+  const [routeLink, setRouteLink] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   async function handleGenerate() {
     setLoading(true);
     setError("");
+    setRouteLink(null);
 
     const link = await getRouteLink(mode, vehicleId);
 
@@ -26,8 +28,14 @@ export default function RouteButton({ activeCount, vehicleId }: Props) {
       return;
     }
 
-    window.open(link, "_blank");
+    setRouteLink(link);
     setLoading(false);
+
+    // Mobilde window.open bloklanabilir, location.href ile yonlendir
+    const w = window.open(link, "_blank");
+    if (!w) {
+      window.location.href = link;
+    }
   }
 
   return (
@@ -85,6 +93,17 @@ export default function RouteButton({ activeCount, vehicleId }: Props) {
         <p className="text-xs text-gray-600 text-center">
           Rota oluşturmak için öğrencileri aktif olarak işaretleyin.
         </p>
+      )}
+
+      {routeLink && (
+        <a
+          href={routeLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block w-full text-center px-4 py-3 text-sm font-medium text-accent bg-accent/10 hover:bg-accent/20 border border-accent/20 rounded-xl transition"
+        >
+          Haritayı Aç
+        </a>
       )}
 
       {error && <p className="text-red-400 text-sm text-center">{error}</p>}
