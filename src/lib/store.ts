@@ -4,7 +4,9 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 
-const DATA_FILE = path.join(process.cwd(), "data", "students.json");
+const DATA_FILE = process.env.VERCEL
+  ? path.join("/tmp", "students.json")
+  : path.join(process.cwd(), "data", "students.json");
 
 interface StoreData {
   school: SchoolInfo;
