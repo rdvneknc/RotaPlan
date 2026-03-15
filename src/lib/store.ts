@@ -362,7 +362,7 @@ export function generateRouteLink(mode: RouteMode, vehicleId?: string): string |
     const destination = schoolCoord;
     const waypointCoords = active.map((s) => `${s.lat},${s.lng}`).join("|");
 
-    let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}`;
+    let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
     if (waypointCoords) {
       url += `&waypoints=${waypointCoords}`;
     }
@@ -377,7 +377,7 @@ export function generateRouteLink(mode: RouteMode, vehicleId?: string): string |
     ? active.slice(0, -1).map((s) => `${s.lat},${s.lng}`).join("|")
     : "";
 
-  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}`;
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
   if (waypointCoords) {
     url += `&waypoints=${waypointCoords}`;
   }
