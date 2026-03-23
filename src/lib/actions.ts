@@ -20,6 +20,19 @@ import {
   deleteVehicle,
   getStudentsByVehicle,
   autoDistributeStudents,
+  getSessions,
+  addSession as storeAddSession,
+  updateSession as storeUpdateSession,
+  deleteSession as storeDeleteSession,
+  loadSession as storeLoadSession,
+  getCurrentSession,
+  getWeeklySchedule,
+  setWeeklyScheduleDay,
+  getWeeklyScheduleForDay,
+  distributeDailyAll as storeDistributeDailyAll,
+  getDailyDistribution,
+  getSessionDistribution,
+  generateRouteLinkForSession,
 } from "./store";
 import { parseMapsUrl } from "./parse-maps-url";
 import { RouteMode } from "./types";
@@ -40,6 +53,7 @@ export async function createStudent(formData: FormData) {
   const label = (formData.get("label") as string)?.trim();
   const mapsUrl = (formData.get("mapsUrl") as string)?.trim();
   const vehicleId = (formData.get("vehicleId") as string)?.trim() || null;
+  const sessionIds = formData.getAll("sessionIds") as string[];
 
   if (!name || !label || !mapsUrl) {
     return { error: "Tüm alanlar zorunludur." };
@@ -50,6 +64,11 @@ export async function createStudent(formData: FormData) {
     return { error: parsed.error };
   }
 
+  const contact1Name = (formData.get("contact1Name") as string)?.trim() || "";
+  const contact1Phone = (formData.get("contact1Phone") as string)?.trim() || "";
+  const contact2Name = (formData.get("contact2Name") as string)?.trim() || "";
+  const contact2Phone = (formData.get("contact2Phone") as string)?.trim() || "";
+
   addStudent({
     name,
     label,
@@ -57,6 +76,11 @@ export async function createStudent(formData: FormData) {
     lng: parsed.coords.lng,
     mapsUrl: parsed.resolvedUrl,
     vehicleId,
+    sessionIds,
+    contact1Name,
+    contact1Phone,
+    contact2Name,
+    contact2Phone,
   });
 
   revalidatePath("/");
@@ -69,6 +93,7 @@ export async function editStudent(formData: FormData) {
   const label = (formData.get("label") as string)?.trim();
   const mapsUrl = (formData.get("mapsUrl") as string)?.trim();
   const vehicleId = (formData.get("vehicleId") as string)?.trim() || null;
+  const sessionIds = formData.getAll("sessionIds") as string[];
 
   if (!name || !label || !mapsUrl) {
     return { error: "Tüm alanlar zorunludur." };
@@ -79,6 +104,11 @@ export async function editStudent(formData: FormData) {
     return { error: parsed.error };
   }
 
+  const contact1Name = (formData.get("contact1Name") as string)?.trim() || "";
+  const contact1Phone = (formData.get("contact1Phone") as string)?.trim() || "";
+  const contact2Name = (formData.get("contact2Name") as string)?.trim() || "";
+  const contact2Phone = (formData.get("contact2Phone") as string)?.trim() || "";
+
   const result = updateStudent(id, {
     name,
     label,
@@ -86,6 +116,11 @@ export async function editStudent(formData: FormData) {
     lng: parsed.coords.lng,
     mapsUrl: parsed.resolvedUrl,
     vehicleId,
+    sessionIds,
+    contact1Name,
+    contact1Phone,
+    contact2Name,
+    contact2Phone,
   });
 
   if (!result) return { error: "Öğrenci bulunamadı." };
@@ -220,7 +255,78 @@ export async function removeVehicle(formData: FormData) {
   return { success: true };
 }
 
-// --- Auto Distribution ---
+// --- Sessions ---
+
+export async function fetchSessions() {
+  return getSessions();
+}
+
+export async function fetchCurrentSession() {
+  return getCurrentSession();
+}
+
+export async function createSession(input: { label: string; time: string; type: "pickup" | "dropoff"; studentIds: string[] }) {
+  const session = storeAddSession(input);
+  revalidatePath("/");
+  return { success: true, session };
+}
+
+export async function editSession(id: string, updates: { label?: string; time?: string; type?: "pickup" | "dropoff"; studentIds?: string[] }) {
+  const result = storeUpdateSession(id, updates);
+  if (!result) return { error: "Seans bulunamadı." };
+  revalidatePath("/");
+  return { success: true };
+}
+
+export async function removeSession(id: string) {
+  storeDeleteSession(id);
+  revalidatePath("/");
+  return { success: true };
+}
+
+export async function activateSession(sessionId: string) {
+  const result = storeLoadSession(sessionId);
+  revalidatePath("/");
+  return result;
+}
+
+// --- Weekly Schedule ---
+
+export async function fetchWeeklySchedule() {
+  return getWeeklySchedule();
+}
+
+export async function fetchWeeklyScheduleForDay(day: string) {
+  return getWeeklyScheduleForDay(day);
+}
+
+export async function updateWeeklyScheduleDay(day: string, sessionId: string, studentIds: string[]) {
+  setWeeklyScheduleDay(day, sessionId, studentIds);
+  revalidatePath("/");
+  return { success: true };
+}
+
+// --- Daily Full Distribution ---
+
+export async function distributeDailyAllAction() {
+  const result = storeDistributeDailyAll();
+  revalidatePath("/");
+  return result;
+}
+
+export async function fetchDailyDistribution() {
+  return getDailyDistribution();
+}
+
+export async function fetchSessionDistribution(sessionId: string, vehicleId: string) {
+  return getSessionDistribution(sessionId, vehicleId);
+}
+
+export async function getRouteLinkForSession(sessionId: string, vehicleId: string) {
+  return generateRouteLinkForSession(sessionId, vehicleId);
+}
+
+// --- Auto Distribution (legacy) ---
 
 export async function autoDistribute() {
   const result = autoDistributeStudents();

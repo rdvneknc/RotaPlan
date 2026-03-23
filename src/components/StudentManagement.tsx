@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Student, Vehicle } from "@/lib/types";
+import { Student, Vehicle, Session } from "@/lib/types";
 import { removeStudent } from "@/lib/actions";
 import AddStudentForm from "./AddStudentForm";
 import EditStudentModal from "./EditStudentModal";
@@ -9,10 +9,11 @@ import EditStudentModal from "./EditStudentModal";
 interface Props {
   students: Student[];
   vehicles: Vehicle[];
+  sessions: Session[];
   onRefresh: () => void;
 }
 
-export default function StudentManagement({ students, vehicles, onRefresh }: Props) {
+export default function StudentManagement({ students, vehicles, sessions, onRefresh }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export default function StudentManagement({ students, vehicles, onRefresh }: Pro
         <div className="mb-5 pb-5 border-b border-dark-500">
           <AddStudentForm
             vehicles={vehicles}
+            sessions={sessions}
             onDone={() => {
               setShowForm(false);
               onRefresh();
@@ -147,6 +149,7 @@ export default function StudentManagement({ students, vehicles, onRefresh }: Pro
         <EditStudentModal
           student={editingStudent}
           vehicles={vehicles}
+          sessions={sessions}
           onClose={() => setEditingStudent(null)}
           onDone={() => {
             setEditingStudent(null);

@@ -2,18 +2,20 @@
 
 import { useState } from "react";
 import { editStudent } from "@/lib/actions";
-import { Student, Vehicle } from "@/lib/types";
+import { Student, Vehicle, Session } from "@/lib/types";
 
 interface Props {
   student: Student;
   vehicles: Vehicle[];
+  sessions: Session[];
   onClose: () => void;
   onDone: () => void;
 }
 
-export default function EditStudentModal({ student, vehicles, onClose, onDone }: Props) {
+export default function EditStudentModal({ student, vehicles, sessions, onClose, onDone }: Props) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [selectedSessions, setSelectedSessions] = useState<string[]>(student.sessionIds || []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -22,6 +24,8 @@ export default function EditStudentModal({ student, vehicles, onClose, onDone }:
 
     const formData = new FormData(e.currentTarget);
     formData.set("id", student.id);
+    formData.delete("sessionIds");
+    selectedSessions.forEach((sid) => formData.append("sessionIds", sid));
     const result = await editStudent(formData);
 
     if (result.error) {
@@ -81,6 +85,62 @@ export default function EditStudentModal({ student, vehicles, onClose, onDone }:
               Değiştirmek istemiyorsanız mevcut linki bırakın
             </p>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="edit-contact1Name" className="block text-sm font-medium text-gray-400 mb-1.5">
+                İrtibat 1
+              </label>
+              <input
+                id="edit-contact1Name"
+                name="contact1Name"
+                type="text"
+                defaultValue={student.contact1Name}
+                placeholder="örn. Baba Ahmet"
+                className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
+              />
+            </div>
+            <div>
+              <label htmlFor="edit-contact1Phone" className="block text-sm font-medium text-gray-400 mb-1.5">
+                Telefon 1
+              </label>
+              <input
+                id="edit-contact1Phone"
+                name="contact1Phone"
+                type="tel"
+                defaultValue={student.contact1Phone}
+                placeholder="5XX XXX XX XX"
+                className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="edit-contact2Name" className="block text-sm font-medium text-gray-400 mb-1.5">
+                İrtibat 2
+              </label>
+              <input
+                id="edit-contact2Name"
+                name="contact2Name"
+                type="text"
+                defaultValue={student.contact2Name}
+                placeholder="örn. Anne Fatma"
+                className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
+              />
+            </div>
+            <div>
+              <label htmlFor="edit-contact2Phone" className="block text-sm font-medium text-gray-400 mb-1.5">
+                Telefon 2
+              </label>
+              <input
+                id="edit-contact2Phone"
+                name="contact2Phone"
+                type="tel"
+                defaultValue={student.contact2Phone}
+                placeholder="5XX XXX XX XX"
+                className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
+              />
+            </div>
+          </div>
           {vehicles.length > 0 && (
             <div>
               <label htmlFor="edit-vehicleId" className="block text-sm font-medium text-gray-400 mb-1.5">
@@ -97,6 +157,33 @@ export default function EditStudentModal({ student, vehicles, onClose, onDone }:
                   <option key={v.id} value={v.id}>{v.driverName} - {v.plate}</option>
                 ))}
               </select>
+            </div>
+          )}
+          {sessions.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-1.5">
+                Seanslar
+              </label>
+              <div className="max-h-32 overflow-y-auto border border-dark-400 rounded-xl divide-y divide-dark-500">
+                {sessions.map((s) => (
+                  <label
+                    key={s.id}
+                    className="flex items-center gap-3 px-3 py-2 hover:bg-dark-600 cursor-pointer transition"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedSessions.includes(s.id)}
+                      onChange={() =>
+                        setSelectedSessions((prev) =>
+                          prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id]
+                        )
+                      }
+                      className="w-4 h-4 rounded border-dark-400 bg-dark-600 text-accent focus:ring-accent"
+                    />
+                    <span className="text-sm text-white">{s.label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
           {error && <p className="text-red-400 text-sm">{error}</p>}

@@ -1,19 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getRouteLink } from "@/lib/actions";
 import { RouteMode } from "@/lib/types";
 
 interface Props {
   activeCount: number;
   vehicleId?: string;
+  sessionType?: "pickup" | "dropoff" | null;
 }
 
-export default function RouteButton({ activeCount, vehicleId }: Props) {
-  const [mode, setMode] = useState<RouteMode>("pickup");
+export default function RouteButton({ activeCount, vehicleId, sessionType }: Props) {
+  const [mode, setMode] = useState<RouteMode>(sessionType || "pickup");
   const [loading, setLoading] = useState(false);
   const [routeLink, setRouteLink] = useState<string | null>(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (sessionType) setMode(sessionType);
+  }, [sessionType]);
 
   async function handleGenerate() {
     setLoading(true);
@@ -31,7 +36,6 @@ export default function RouteButton({ activeCount, vehicleId }: Props) {
     setRouteLink(link);
     setLoading(false);
 
-    // Mobilde window.open bloklanabilir, location.href ile yonlendir
     const w = window.open(link, "_blank");
     if (!w) {
       window.location.href = link;
@@ -40,43 +44,56 @@ export default function RouteButton({ activeCount, vehicleId }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Mod seçici */}
-      <div className="flex bg-dark-700 rounded-xl p-1.5 gap-1">
-        <button
-          type="button"
-          onClick={() => setMode("pickup")}
-          className={`flex-1 py-3 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
-            mode === "pickup"
-              ? "bg-accent text-dark-900"
-              : "text-gray-400 hover:text-white hover:bg-dark-600"
-          }`}
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4" />
-          </svg>
-          Evlerden Okula
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("dropoff")}
-          className={`flex-1 py-3 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
-            mode === "dropoff"
-              ? "bg-accent text-dark-900"
-              : "text-gray-400 hover:text-white hover:bg-dark-600"
-          }`}
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-          </svg>
-          Okuldan Evlere
-        </button>
-      </div>
-
-      <p className="text-xs text-gray-500 text-center">
-        {mode === "pickup"
-          ? "Mevcut konumunuzdan öğrencileri toplayıp okula bırakır"
-          : "Okuldan öğrencileri alıp evlerine bırakır"}
-      </p>
+      {/* Seans varsa otomatik yön göster, yoksa manuel seçim */}
+      {sessionType ? (
+        <div className={`rounded-xl p-3 text-center text-sm font-medium ${
+          sessionType === "pickup"
+            ? "bg-green-500/10 text-green-400 border border-green-500/20"
+            : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+        }`}>
+          {sessionType === "pickup"
+            ? "Mevcut konumunuzdan öğrencileri toplayıp okula bırakır"
+            : "Okuldan öğrencileri alıp evlerine bırakır"}
+        </div>
+      ) : (
+        <>
+          <div className="flex bg-dark-700 rounded-xl p-1.5 gap-1">
+            <button
+              type="button"
+              onClick={() => setMode("pickup")}
+              className={`flex-1 py-3 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
+                mode === "pickup"
+                  ? "bg-accent text-dark-900"
+                  : "text-gray-400 hover:text-white hover:bg-dark-600"
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4" />
+              </svg>
+              Evlerden Okula
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("dropoff")}
+              className={`flex-1 py-3 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
+                mode === "dropoff"
+                  ? "bg-accent text-dark-900"
+                  : "text-gray-400 hover:text-white hover:bg-dark-600"
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+              Okuldan Evlere
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 text-center">
+            {mode === "pickup"
+              ? "Mevcut konumunuzdan öğrencileri toplayıp okula bırakır"
+              : "Okuldan öğrencileri alıp evlerine bırakır"}
+          </p>
+        </>
+      )}
 
       <button
         onClick={handleGenerate}
@@ -89,12 +106,6 @@ export default function RouteButton({ activeCount, vehicleId }: Props) {
         {loading ? "Oluşturuluyor..." : "Rota Oluştur"}
       </button>
 
-      {activeCount === 0 && (
-        <p className="text-xs text-gray-600 text-center">
-          Rota oluşturmak için öğrencileri aktif olarak işaretleyin.
-        </p>
-      )}
-
       {routeLink && (
         <a
           href={routeLink}
@@ -104,6 +115,12 @@ export default function RouteButton({ activeCount, vehicleId }: Props) {
         >
           Haritayı Aç
         </a>
+      )}
+
+      {activeCount === 0 && (
+        <p className="text-xs text-gray-600 text-center">
+          Rota oluşturmak için admin panelinden seans yükleyin.
+        </p>
       )}
 
       {error && <p className="text-red-400 text-sm text-center">{error}</p>}

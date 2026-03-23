@@ -7,6 +7,19 @@ export interface Student {
   mapsUrl: string;
   isActive: boolean;
   vehicleId: string | null;
+  sessionIds: string[];
+  contact1Name: string;
+  contact1Phone: string;
+  contact2Name: string;
+  contact2Phone: string;
+}
+
+export interface Session {
+  id: string;
+  label: string;
+  time: string;
+  type: "pickup" | "dropoff";
+  studentIds: string[];
 }
 
 export interface Vehicle {
