@@ -21,12 +21,16 @@ type DailyDistribution = {
   };
 };
 
+/** Gün anahtarı (0–6) → o gün dağıtıma dahil araç id listesi. Tanımsızsa tüm araçlar çalışır sayılır. */
+type WeeklyWorkingVehicles = { [day: string]: string[] };
+
 interface StoreData {
   school: SchoolInfo;
   students: Student[];
   vehicles: Vehicle[];
   sessions: Session[];
   weeklySchedule: WeeklySchedule;
+  weeklyWorkingVehicles: WeeklyWorkingVehicles;
   dailyDistribution: DailyDistribution | null;
   currentSessionId: string | null;
   nextId: number;
@@ -162,6 +166,7 @@ const DEFAULT_DATA: StoreData = {
     "4": { "1": ["1", "2", "5", "6"], "2": ["1", "2", "5", "6"], "3": ["3", "4", "5"], "4": ["3", "4", "5"] },
     "5": { "1": ["1", "2", "5", "6"], "2": ["1", "2", "5", "6"], "3": ["3", "4", "5"], "4": ["3", "4", "5"] },
   },
+  weeklyWorkingVehicles: {},
   dailyDistribution: null,
   currentSessionId: null,
   nextId: 7,
@@ -192,6 +197,7 @@ function readData(): StoreData {
       if (!data.nextSessionId) data.nextSessionId = 1;
       if (data.currentSessionId === undefined) data.currentSessionId = null;
       if (!data.weeklySchedule) data.weeklySchedule = {};
+      if (!data.weeklyWorkingVehicles) data.weeklyWorkingVehicles = {};
       if (data.dailyDistribution === undefined) data.dailyDistribution = null;
       data.students = (data.students || []).map((s: Student) => ({
         ...s,
@@ -549,18 +555,69 @@ export function reorderStudent(id: string, direction: "up" | "down"): boolean {
   return true;
 }
 
+// --- Güne göre çalışan araçlar ---
+
+export function getWorkingVehicleIdsForDay(dayKey: string): string[] {
+  const data = readData();
+  const allIds = data.vehicles.map((v) => v.id);
+  const configured = data.weeklyWorkingVehicles?.[dayKey];
+  if (configured === undefined) return [...allIds];
+  return configured.filter((id) => allIds.includes(id));
+}
+
+export function setWorkingVehicleIdsForDay(dayKey: string, vehicleIds: string[]): { error?: string } {
+  const data = readData();
+  if (vehicleIds.length === 0) {
+    return { error: "En az bir araç seçmelisiniz." };
+  }
+  const valid = new Set(data.vehicles.map((v) => v.id));
+  for (const id of vehicleIds) {
+    if (!valid.has(id)) return { error: "Geçersiz araç." };
+  }
+  if (!data.weeklyWorkingVehicles) data.weeklyWorkingVehicles = {};
+  data.weeklyWorkingVehicles[dayKey] = vehicleIds;
+  saveData(data);
+  return {};
+}
+
+export function isVehicleWorkingToday(vehicleId: string): boolean {
+  const data = readData();
+  const dayKey = String(new Date().getDay());
+  const configured = data.weeklyWorkingVehicles?.[dayKey];
+  if (configured === undefined) return true;
+  return configured.includes(vehicleId);
+}
+
 // --- Daily Full Distribution ---
 
-export function distributeDailyAll(): { error?: string; sessionCount?: number; totalStudents?: number } {
+export function distributeDailyAll(): {
+  error?: string;
+  sessionCount?: number;
+  totalStudents?: number;
+  vehicleCount?: number;
+} {
   const data = readData();
-  const vehicles = data.vehicles;
-
-  if (vehicles.length === 0) {
+  if (data.vehicles.length === 0) {
     return { error: "Araç tanımlanmamış. Önce Araçlar sekmesinden araç ekleyin." };
   }
 
   const today = new Date().getDay();
   const dayKey = String(today);
+  const configured = data.weeklyWorkingVehicles?.[dayKey];
+  let vehiclesToUse: Vehicle[];
+  if (configured === undefined) {
+    vehiclesToUse = data.vehicles;
+  } else {
+    if (configured.length === 0) {
+      return { error: "Bugün çalışan araç seçilmedi. Önce listeden en az bir şoför işaretleyin." };
+    }
+    const allowed = new Set(configured);
+    vehiclesToUse = data.vehicles.filter((v) => allowed.has(v.id));
+    if (vehiclesToUse.length === 0) {
+      return { error: "Seçilen araçlar bulunamadı. Araç listesini kontrol edin." };
+    }
+  }
+
   const daySchedule = data.weeklySchedule[dayKey] || {};
 
   const distribution: DailyDistribution = {};
@@ -577,18 +634,77 @@ export function distributeDailyAll(): { error?: string; sessionCount?: number; t
       continue;
     }
 
-    const result = distributeStudents(sessionStudents, vehicles, data.school);
+    const result = distributeStudents(sessionStudents, vehiclesToUse, data.school);
     distribution[session.id] = { studentAssignments: result.assignments };
     totalStudents += result.assignments.length;
   }
 
   data.dailyDistribution = distribution;
   saveData(data);
-  return { sessionCount: data.sessions.length, totalStudents };
+  return {
+    sessionCount: data.sessions.length,
+    totalStudents,
+    vehicleCount: vehiclesToUse.length,
+  };
 }
 
 export function getDailyDistribution(): DailyDistribution | null {
   return readData().dailyDistribution;
+}
+
+export function clearDailyDistribution(): void {
+  const data = readData();
+  data.dailyDistribution = null;
+  saveData(data);
+}
+
+export type SessionDistributionAssignment = {
+  studentId: string;
+  vehicleId: string;
+  order: number;
+};
+
+function normalizeAssignmentsByVehicle(
+  assignments: SessionDistributionAssignment[]
+): SessionDistributionAssignment[] {
+  const byVehicle = new Map<string, { studentId: string; order: number }[]>();
+  for (const a of assignments) {
+    if (!byVehicle.has(a.vehicleId)) byVehicle.set(a.vehicleId, []);
+    byVehicle.get(a.vehicleId)!.push({ studentId: a.studentId, order: a.order });
+  }
+  const result: SessionDistributionAssignment[] = [];
+  for (const [vId, items] of byVehicle) {
+    items.sort((x, y) => x.order - y.order);
+    items.forEach((item, idx) => {
+      result.push({ studentId: item.studentId, vehicleId: vId, order: idx });
+    });
+  }
+  return result;
+}
+
+export function updateDailyDistributionSession(
+  sessionId: string,
+  assignments: SessionDistributionAssignment[]
+): { error?: string } {
+  const data = readData();
+  if (!data.dailyDistribution) return { error: "Önce günü dağıtın." };
+  if (!data.sessions.some((s) => s.id === sessionId)) {
+    return { error: "Seans bulunamadı." };
+  }
+
+  const vehicleIds = new Set(data.vehicles.map((v) => v.id));
+  const seenStudents = new Set<string>();
+  for (const a of assignments) {
+    if (!vehicleIds.has(a.vehicleId)) return { error: "Geçersiz araç." };
+    if (seenStudents.has(a.studentId)) return { error: "Aynı öğrenci iki kez eklenemez." };
+    seenStudents.add(a.studentId);
+  }
+
+  data.dailyDistribution[sessionId] = {
+    studentAssignments: normalizeAssignmentsByVehicle(assignments),
+  };
+  saveData(data);
+  return {};
 }
 
 export function getSessionDistribution(sessionId: string, vehicleId: string): Student[] {

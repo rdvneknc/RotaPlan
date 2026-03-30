@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Student, Vehicle, Session } from "@/lib/types";
-import { fetchSessionDistribution, getRouteLinkForSession } from "@/lib/actions";
+import { fetchDailyDistribution, fetchSessionDistribution, fetchVehicleWorkingToday, getRouteLinkForSession } from "@/lib/actions";
 
 type DailyDist = {
   [sessionId: string]: {
@@ -10,21 +10,74 @@ type DailyDist = {
   };
 };
 
+/** Görünür sekmede ~1 dağıtım isteği/dk; liste, dağıtım güncellenince veya sekme odaklanınca yenilenir. */
+const DISTRIBUTION_POLL_MS = 60_000;
+
+/** "Geçti" seans stilini denemek için [saat, dakika] verin; normal kullanımda null. */
+const DEMO_FIXED_TIME_HM: [number, number] | null = null;
+
+function getClockNowForSessionUi(nowTick: number): Date {
+  if (DEMO_FIXED_TIME_HM) {
+    const d = new Date();
+    d.setHours(DEMO_FIXED_TIME_HM[0], DEMO_FIXED_TIME_HM[1], 0, 0);
+    return d;
+  }
+  return new Date(nowTick);
+}
+
+/** Seans saati (örn. 09:40) geçti mi — dakika çözünürlüğü, yerel saat. */
+function sessionTimeToMinutes(timeStr: string): number | null {
+  const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+function isSessionTimePast(session: Session, now: Date): boolean {
+  const t = sessionTimeToMinutes(session.time);
+  if (t === null) return false;
+  const cur = now.getHours() * 60 + now.getMinutes();
+  return cur > t;
+}
+
 interface Props {
   vehicle: Vehicle;
   sessions: Session[];
   initialDistribution: DailyDist | null;
+  initialWorkingToday: boolean;
 }
 
-export default function DriverDashboard({ vehicle, sessions, initialDistribution }: Props) {
+export default function DriverDashboard({ vehicle, sessions, initialDistribution, initialWorkingToday }: Props) {
   const [selectedSessionId, setSelectedSessionId] = useState<string>("");
   const [sessionStudents, setSessionStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(false);
   const [routeLink, setRouteLink] = useState<string | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
-  const [distribution] = useState<DailyDist | null>(initialDistribution);
+  const [distribution, setDistribution] = useState<DailyDist | null>(initialDistribution);
+  const [workingToday, setWorkingToday] = useState(initialWorkingToday);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const selectedSessionRef = useRef(selectedSessionId);
+  selectedSessionRef.current = selectedSessionId;
 
   const selectedSession = sessions.find((s) => s.id === selectedSessionId) || null;
+
+  useEffect(() => {
+    if (DEMO_FIXED_TIME_HM) return;
+    function tick() {
+      setNowTick(Date.now());
+    }
+    const id = setInterval(tick, 60_000);
+    function onVisible() {
+      if (document.visibilityState === "visible") tick();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   function getSessionStudentCount(sessionId: string): number {
     if (!distribution || !distribution[sessionId]) return 0;
@@ -45,6 +98,23 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
     setLoading(false);
   }, [vehicle.id]);
 
+  const syncDistribution = useCallback(async () => {
+    const [next, working] = await Promise.all([
+      fetchDailyDistribution(),
+      fetchVehicleWorkingToday(vehicle.id),
+    ]);
+    setWorkingToday(working);
+    setDistribution(next);
+    if (next == null) {
+      setSelectedSessionId("");
+      setSessionStudents([]);
+      setRouteLink(null);
+    } else {
+      const sid = selectedSessionRef.current;
+      if (sid) void loadSessionStudents(sid);
+    }
+  }, [vehicle.id, loadSessionStudents]);
+
   useEffect(() => {
     if (selectedSessionId) {
       loadSessionStudents(selectedSessionId);
@@ -55,12 +125,26 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
     }
   }, [selectedSessionId, loadSessionStudents]);
 
-  // Auto-refresh every 10s
   useEffect(() => {
-    if (!selectedSessionId) return;
-    const interval = setInterval(() => loadSessionStudents(selectedSessionId), 10000);
-    return () => clearInterval(interval);
-  }, [selectedSessionId, loadSessionStudents]);
+    void syncDistribution();
+    const distInterval = setInterval(() => {
+      if (document.visibilityState === "visible") void syncDistribution();
+    }, DISTRIBUTION_POLL_MS);
+
+    function onBecameVisible() {
+      if (document.visibilityState !== "visible") return;
+      void syncDistribution();
+    }
+
+    document.addEventListener("visibilitychange", onBecameVisible);
+    window.addEventListener("focus", onBecameVisible);
+
+    return () => {
+      clearInterval(distInterval);
+      document.removeEventListener("visibilitychange", onBecameVisible);
+      window.removeEventListener("focus", onBecameVisible);
+    };
+  }, [syncDistribution]);
 
   async function handleGenerateRoute() {
     if (!selectedSessionId) return;
@@ -97,7 +181,14 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
         </div>
       </div>
 
-      {!hasDistribution ? (
+      {!workingToday ? (
+        <div className="bg-dark-800 rounded-2xl border border-amber-600/30 p-6 text-center">
+          <p className="text-base font-medium text-amber-300 mb-2">Bugün bu araç nöbette değil</p>
+          <p className="text-sm text-gray-500">
+            Admin panelinde bugünün çalışan şoför listesinde bu araç işaretli değil. Liste güncellenirse sayfa bir süre sonra yenilenir veya sayfayı yenileyin.
+          </p>
+        </div>
+      ) : !hasDistribution ? (
         <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6 text-center">
           <svg className="mx-auto h-12 w-12 mb-3 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
@@ -109,38 +200,75 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
         <>
           {/* Seans seçici */}
           <div className="bg-dark-800 rounded-2xl border border-dark-500 p-5">
-            <label className="block text-xs font-medium text-gray-500 mb-2">Seans Seçin</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Seans Seçin</label>
+            {DEMO_FIXED_TIME_HM ? (
+              <p className="text-[11px] text-amber-400/90 mb-2 rounded-lg border border-amber-600/30 bg-amber-500/10 px-2 py-1.5">
+                Deneme görünümü: saat <strong className="text-amber-300">{String(DEMO_FIXED_TIME_HM[0]).padStart(2, "0")}:{String(DEMO_FIXED_TIME_HM[1]).padStart(2, "0")}</strong>{" "}
+                sabit (gerçek saate dönmek için geliştiricide bu sabiti kapatın).
+              </p>
+            ) : (
+              <p className="text-[11px] text-gray-600 mb-2">Bugünün saatine göre geçmiş seanslar soluk ve &quot;Geçti&quot; etiketiyle gösterilir.</p>
+            )}
             <div className="space-y-2">
               {sessions.map((s) => {
                 const count = getSessionStudentCount(s.id);
                 const isSelected = selectedSessionId === s.id;
+                const now = getClockNowForSessionUi(nowTick);
+                const timePast = isSessionTimePast(s, now);
+                const baseIdle =
+                  timePast && !isSelected
+                    ? "border-dark-600 bg-dark-800/70 opacity-70 hover:bg-dark-700/80 hover:opacity-90"
+                    : "border-dark-400 bg-dark-700 hover:bg-dark-600";
+                const selectedIdle =
+                  isSelected && timePast
+                    ? s.type === "pickup"
+                      ? "border-green-500/25 bg-green-500/5 opacity-90"
+                      : "border-blue-500/25 bg-blue-500/5 opacity-90"
+                    : isSelected
+                      ? s.type === "pickup"
+                        ? "border-green-500/40 bg-green-500/10"
+                        : "border-blue-500/40 bg-blue-500/10"
+                      : baseIdle;
                 return (
                   <button
                     key={s.id}
                     onClick={() => setSelectedSessionId(isSelected ? "" : s.id)}
-                    className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl border transition ${
-                      isSelected
-                        ? s.type === "pickup"
-                          ? "border-green-500/40 bg-green-500/10"
-                          : "border-blue-500/40 bg-blue-500/10"
-                        : "border-dark-400 bg-dark-700 hover:bg-dark-600"
-                    }`}
+                    className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl border transition ${selectedIdle}`}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className={`w-2 h-2 rounded-full ${s.type === "pickup" ? "bg-green-400" : "bg-blue-400"}`} />
-                      <div className="text-left">
-                        <p className={`text-sm font-medium ${isSelected ? "text-white" : "text-gray-300"}`}>
-                          {s.label}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {s.type === "pickup" ? "Evlerden Okula" : "Okuldan Evlere"}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          timePast
+                            ? "bg-gray-600"
+                            : s.type === "pickup"
+                              ? "bg-green-400"
+                              : "bg-blue-400"
+                        }`}
+                      />
+                      <div className="text-left min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className={`text-sm font-medium truncate ${
+                            isSelected ? "text-white" : timePast ? "text-gray-500" : "text-gray-300"
+                          }`}>
+                            {s.label}
+                          </p>
+                          {timePast && (
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600 bg-dark-600 px-1.5 py-0.5 rounded">
+                              Geçti
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-xs ${timePast ? "text-gray-600" : "text-gray-500"}`}>
+                          {s.time} · {s.type === "pickup" ? "Evlerden Okula" : "Okuldan Evlere"}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <span className={`text-sm font-semibold px-2.5 py-1 rounded-lg ${
                         count > 0
-                          ? "text-accent bg-accent/10"
+                          ? timePast && !isSelected
+                            ? "text-gray-500 bg-dark-600/80"
+                            : "text-accent bg-accent/10"
                           : "text-gray-600 bg-dark-600"
                       }`}>
                         {count} kişi

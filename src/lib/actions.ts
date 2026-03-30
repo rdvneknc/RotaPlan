@@ -29,10 +29,16 @@ import {
   getWeeklySchedule,
   setWeeklyScheduleDay,
   getWeeklyScheduleForDay,
+  getWorkingVehicleIdsForDay,
+  setWorkingVehicleIdsForDay as storeSetWorkingVehicleIdsForDay,
+  isVehicleWorkingToday,
   distributeDailyAll as storeDistributeDailyAll,
   getDailyDistribution,
+  clearDailyDistribution as storeClearDailyDistribution,
+  updateDailyDistributionSession,
   getSessionDistribution,
   generateRouteLinkForSession,
+  type SessionDistributionAssignment,
 } from "./store";
 import { parseMapsUrl } from "./parse-maps-url";
 import { RouteMode } from "./types";
@@ -306,6 +312,24 @@ export async function updateWeeklyScheduleDay(day: string, sessionId: string, st
   return { success: true };
 }
 
+// --- Bugün çalışan araçlar ---
+
+export async function fetchWorkingVehicleIdsForDay(dayKey: string) {
+  return getWorkingVehicleIdsForDay(dayKey);
+}
+
+export async function setWorkingVehicleIdsForDayAction(dayKey: string, vehicleIds: string[]) {
+  const result = storeSetWorkingVehicleIdsForDay(dayKey, vehicleIds);
+  revalidatePath("/");
+  revalidatePath("/admin");
+  revalidatePath("/sofor", "layout");
+  return result;
+}
+
+export async function fetchVehicleWorkingToday(vehicleId: string) {
+  return isVehicleWorkingToday(vehicleId);
+}
+
 // --- Daily Full Distribution ---
 
 export async function distributeDailyAllAction() {
@@ -316,6 +340,25 @@ export async function distributeDailyAllAction() {
 
 export async function fetchDailyDistribution() {
   return getDailyDistribution();
+}
+
+export async function clearDailyDistributionAction() {
+  storeClearDailyDistribution();
+  revalidatePath("/");
+  revalidatePath("/admin");
+  revalidatePath("/sofor", "layout");
+  return { success: true as const };
+}
+
+export async function updateDailyDistributionSessionAction(
+  sessionId: string,
+  assignments: SessionDistributionAssignment[]
+) {
+  const result = updateDailyDistributionSession(sessionId, assignments);
+  revalidatePath("/");
+  revalidatePath("/admin");
+  revalidatePath("/sofor", "layout");
+  return result;
 }
 
 export async function fetchSessionDistribution(sessionId: string, vehicleId: string) {
