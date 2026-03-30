@@ -63,8 +63,6 @@ export default function StudentManagement({ students, vehicles, sessions, onRefr
       {showForm && (
         <div className="mb-5 pb-5 border-b border-dark-500">
           <AddStudentForm
-            vehicles={vehicles}
-            sessions={sessions}
             onDone={() => {
               setShowForm(false);
               onRefresh();

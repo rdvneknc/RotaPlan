@@ -9,6 +9,7 @@ import DailyListEditor from "./DailyListEditor";
 import VehicleManagement from "./VehicleManagement";
 import SessionManagement from "./SessionManagement";
 import Link from "next/link";
+import { ADMIN_PAGE_CONTAINER } from "@/lib/admin-layout";
 
 interface Props {
   initialStudents: Student[];
@@ -47,7 +48,7 @@ export default function AdminDashboard({ initialStudents, initialSchool, initial
   ];
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+    <main className={`${ADMIN_PAGE_CONTAINER} py-6 space-y-5`}>
       {/* Stat kartları */}
       <div className="grid grid-cols-4 gap-3">
         <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 text-center">
@@ -68,13 +69,14 @@ export default function AdminDashboard({ initialStudents, initialSchool, initial
         </div>
       </div>
 
-      {/* Tab navigasyon */}
-      <div className="flex bg-dark-800 rounded-2xl border border-dark-500 p-1.5 gap-1 overflow-x-auto">
+      {/* Tab navigasyon: mobilde yatay kaydırma; md+ eşit genişlik */}
+      <div className="flex snap-x snap-mandatory bg-dark-800 rounded-2xl border border-dark-500 p-1.5 gap-1 overflow-x-auto overflow-y-hidden touch-pan-x overscroll-x-contain [scrollbar-width:thin]">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 py-2.5 text-sm font-medium rounded-xl transition flex items-center justify-center gap-1 whitespace-nowrap min-w-0 ${
+            type="button"
+            className={`shrink-0 snap-start md:flex-1 md:min-w-0 py-2.5 px-3.5 md:px-2 text-sm font-medium rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeTab === tab.id
                 ? "bg-accent text-dark-900"
                 : "text-gray-400 hover:text-white hover:bg-dark-600"

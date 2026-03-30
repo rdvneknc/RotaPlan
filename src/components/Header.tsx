@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ADMIN_PAGE_CONTAINER } from "@/lib/admin-layout";
 
 interface Props {
   schoolLabel: string;
@@ -8,9 +9,12 @@ interface Props {
 }
 
 export default function Header({ schoolLabel, role }: Props) {
+  const containerClass =
+    role === "admin" ? `${ADMIN_PAGE_CONTAINER} py-5` : "max-w-2xl mx-auto px-4 py-5";
+
   return (
     <header className="bg-dark-800 border-b border-dark-500">
-      <div className="max-w-2xl mx-auto px-4 py-5">
+      <div className={containerClass}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
@@ -28,7 +32,13 @@ export default function Header({ schoolLabel, role }: Props) {
           <div className="flex items-center gap-3">
             <div className="text-right">
               <p className="text-xs text-gray-500">Okul</p>
-              <p className="text-sm font-medium text-gray-300 max-w-[160px] truncate">{schoolLabel}</p>
+              <p
+                className={`text-sm font-medium text-gray-300 truncate ${
+                  role === "admin" ? "max-w-[160px] sm:max-w-[220px] md:max-w-xs lg:max-w-sm" : "max-w-[160px]"
+                }`}
+              >
+                {schoolLabel}
+              </p>
             </div>
             <Link
               href="/"
