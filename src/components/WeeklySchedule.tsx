@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Session, Student } from "@/lib/types";
 import { fetchWeeklySchedule, updateWeeklyScheduleDay } from "@/lib/actions";
+import { getScheduleDayKey } from "@/lib/schedule-day";
 
 const DAY_LABELS: { [key: string]: string } = {
   "1": "Pazartesi",
@@ -34,7 +35,7 @@ interface Props {
 }
 
 export default function WeeklySchedule({ schoolId, sessions, students, onRefresh }: Props) {
-  const todayIndex = new Date().getDay();
+  const todayIndex = parseInt(getScheduleDayKey(), 10);
   const defaultDay = todayIndex >= 1 && todayIndex <= 5 ? String(todayIndex) : "1";
 
   const [selectedDay, setSelectedDay] = useState(defaultDay);

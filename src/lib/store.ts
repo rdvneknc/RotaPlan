@@ -1,5 +1,6 @@
 import { Student, Vehicle, Session, SchoolInfo, School, AppUser, RouteMode, DailyDistribution } from "./types";
 import { distributeStudents } from "./optimizer";
+import { getScheduleDayKey } from "./schedule-day";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
@@ -271,7 +272,7 @@ function ensureDistributionByDay(data: StoreData): DistributionByDay {
   if (!data.distributionByDay) data.distributionByDay = {};
   const legacy = data.dailyDistribution;
   if (legacy && Object.keys(legacy).length > 0) {
-    const tk = String(new Date().getDay());
+    const tk = getScheduleDayKey();
     if (!data.distributionByDay[tk] || Object.keys(data.distributionByDay[tk]).length === 0) {
       data.distributionByDay[tk] = legacy;
     }
@@ -282,7 +283,7 @@ function ensureDistributionByDay(data: StoreData): DistributionByDay {
 
 function getTodayDistribution(data: StoreData): DailyDistribution | null {
   const map = ensureDistributionByDay(data);
-  const d = map[String(new Date().getDay())];
+  const d = map[getScheduleDayKey()];
   if (!d || Object.keys(d).length === 0) return null;
   return d;
 }
@@ -517,8 +518,7 @@ export function loadSession(schoolId: string, sessionId: string): { error?: stri
   const session = data.sessions.find((s) => s.id === sessionId);
   if (!session) return { error: "Seans bulunamadı." };
 
-  const today = new Date().getDay();
-  const dayKey = String(today);
+  const dayKey = getScheduleDayKey();
   const daySchedule = data.weeklySchedule[dayKey];
   const studentIds = daySchedule?.[sessionId] ?? session.studentIds;
 
@@ -823,7 +823,7 @@ export function setWorkingVehicleIdsForDay(schoolId: string, dayKey: string, veh
 
 export function isVehicleWorkingToday(schoolId: string, vehicleId: string): boolean {
   const data = readSchoolData(schoolId);
-  const dayKey = String(new Date().getDay());
+  const dayKey = getScheduleDayKey();
   const configured = data.weeklyWorkingVehicles?.[dayKey];
   if (configured === undefined) return true;
   return configured.includes(vehicleId);
@@ -967,7 +967,7 @@ export function distributeDailyAll(schoolId: string, scope: "day" | "week"): {
   };
 
   if (scope === "day") {
-    const dayKey = String(new Date().getDay());
+    const dayKey = getScheduleDayKey();
     const built = buildDistributionForDay(data, dayKey);
     if (built.error) return { error: built.error };
     if (Object.keys(built.distribution).length === 0) {
@@ -1021,7 +1021,7 @@ export function getDistributionDayKeysWithData(schoolId: string): string[] {
 export function clearDailyDistributionToday(schoolId: string): void {
   const data = readSchoolData(schoolId);
   const map = ensureDistributionByDay(data);
-  delete map[String(new Date().getDay())];
+  delete map[getScheduleDayKey()];
   saveSchoolData(schoolId, data);
 }
 
@@ -1062,7 +1062,7 @@ export function updateDailyDistributionGroup(
 ): { error?: string } {
   const data = readSchoolData(schoolId);
   const map = ensureDistributionByDay(data);
-  const dayKey = String(new Date().getDay());
+  const dayKey = getScheduleDayKey();
   const todayDist = map[dayKey];
   if (!todayDist) return { error: "Önce günü dağıtın." };
   if (!todayDist[groupId]) return { error: "Grup bulunamadı." };
