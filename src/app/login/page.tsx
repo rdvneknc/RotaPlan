@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { loginAction } from "@/lib/actions";
-import { useRouter } from "next/navigation";
 import DriverLoginForm from "@/components/DriverLoginForm";
 
 type LoginMode = "admin" | "driver";
@@ -12,7 +11,6 @@ export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>("admin");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   useEffect(() => {
     try {
@@ -29,25 +27,11 @@ export default function LoginPage() {
     setError("");
 
     const formData = new FormData(e.currentTarget);
-    const result = await loginAction(formData);
-
-    if (result.error) {
-      setError(result.error);
+    try {
+      const result = await loginAction(formData);
+      if (result?.error) setError(result.error);
+    } finally {
       setLoading(false);
-      return;
-    }
-
-    if (result.mustChangePassword) {
-      router.push("/sifre-degistir");
-      return;
-    }
-
-    if (result.role === "superadmin") {
-      router.push("/super-admin");
-    } else if (result.schoolId) {
-      router.push(`/admin/${result.schoolId}`);
-    } else {
-      router.push("/");
     }
   }
 

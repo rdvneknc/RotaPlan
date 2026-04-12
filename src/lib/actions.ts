@@ -782,7 +782,11 @@ export async function loginAction(formData: FormData) {
     mustChangePassword: user.mustChangePassword,
   });
 
-  return { success: true, role: user.role, schoolId: user.schoolId, mustChangePassword: user.mustChangePassword };
+  // Sunucu yönlendirmesi: Set-Cookie ile aynı yanıtta gider (Vercel / istemci yarışı azalır).
+  if (user.mustChangePassword) redirect("/sifre-degistir");
+  if (user.role === "superadmin") redirect("/super-admin");
+  if (user.schoolId) redirect(`/admin/${user.schoolId}`);
+  redirect("/");
 }
 
 export async function driverLoginAction(formData: FormData) {
@@ -918,6 +922,13 @@ export async function changePasswordAction(formData: FormData) {
     if (!user) {
       return { error: "Mevcut şifre hatalı." };
     }
+  }
+
+  if (session.userId === "bootstrap-superadmin") {
+    return {
+      error:
+        "Bu hesap yalnızca Vercel ortam değişkenleriyle (ROTA_BOOTSTRAP_SUPERADMIN_*) tanımlıdır. Şifreyi panelden değil, Vercel env üzerinden güncelleyip yeniden deploy edin.",
+    };
   }
 
   const ok = changeUserPassword(session.userId, newPassword);

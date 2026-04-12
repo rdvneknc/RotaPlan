@@ -177,12 +177,33 @@ export function createUser(input: {
   return user;
 }
 
+/** Kalıcı DB yokken (ör. Vercel /tmp boş) tek süper admin girişi. Vercel’de env ile tanımlayın; Firestore sonrası kaldırılabilir. */
+function matchBootstrapSuperadmin(email: string, password: string): AppUser | null {
+  const envEmail = process.env.ROTA_BOOTSTRAP_SUPERADMIN_EMAIL?.trim().toLowerCase();
+  const envPassword = process.env.ROTA_BOOTSTRAP_SUPERADMIN_PASSWORD;
+  if (!envEmail || !envPassword || envPassword.length < 4) return null;
+  if (email.toLowerCase().trim() !== envEmail) return null;
+  if (password !== envPassword) return null;
+  return {
+    id: "bootstrap-superadmin",
+    email: envEmail,
+    passwordHash: "",
+    salt: "",
+    schoolId: null,
+    role: "superadmin",
+    mustChangePassword: false,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 export function validateUser(email: string, password: string): AppUser | null {
   const user = getUserByEmail(email);
-  if (!user) return null;
-  const hash = hashPassword(password, user.salt);
-  if (hash !== user.passwordHash) return null;
-  return user;
+  if (user) {
+    const hash = hashPassword(password, user.salt);
+    if (hash !== user.passwordHash) return null;
+    return user;
+  }
+  return matchBootstrapSuperadmin(email, password);
 }
 
 export function changeUserPassword(userId: string, newPassword: string): boolean {
