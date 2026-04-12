@@ -12,7 +12,6 @@ import {
   setWorkingVehicleIdsForDayAction,
   updateDailyDistributionGroupAction,
 } from "@/lib/actions";
-import { getScheduleDayKey } from "@/lib/schedule-day";
 
 interface Props {
   schoolId: string;
@@ -112,7 +111,7 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
   const [savingGroupId, setSavingGroupId] = useState<string | null>(null);
   const dragRef = useRef<{ groupId: string; studentId: string } | null>(null);
 
-  const todayKey = getScheduleDayKey();
+  const todayKey = String(new Date().getDay());
   const todayLabel = DAY_LABELS[todayKey] || "Bugün";
 
   const loadData = useCallback(async () => {

@@ -11,7 +11,6 @@ import {
   pullWeeklyProgramFromGoogleSheets,
 } from "@/lib/actions";
 import { DAY_LABELS, DAYS } from "@/lib/weekly-program-shared";
-import { getScheduleDayKey } from "@/lib/schedule-day";
 
 function StudentSearchDropdown({
   available,
@@ -104,7 +103,10 @@ export default function ProgramEditor({
   const [sessions, setSessions] = useState<Session[]>(initialSessions);
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [schedule, setSchedule] = useState<{ [day: string]: { [sessionId: string]: string[] } }>({});
-  const [selectedDay, setSelectedDay] = useState(() => getScheduleDayKey());
+  const [selectedDay, setSelectedDay] = useState(() => {
+    const today = new Date().getDay();
+    return String(today);
+  });
   const [saving, setSaving] = useState(false);
   const [sheetsBusy, setSheetsBusy] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -258,7 +260,7 @@ export default function ProgramEditor({
     return students.filter((s) => !assigned.includes(s.id));
   }
 
-  const todayIndex = parseInt(getScheduleDayKey(), 10);
+  const todayIndex = new Date().getDay();
 
   return (
     <div className="space-y-6">
