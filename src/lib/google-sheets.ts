@@ -24,8 +24,15 @@ export function parseSpreadsheetIdFromInput(input: string): string | null {
   return null;
 }
 
+function getGoogleServiceAccountJsonRaw(): string | undefined {
+  // Köşeli notasyon: bazı Next derlemelerinde process.env.X build anında gömülüp boş kalabiliyor;
+  // Vercel runtime env için daha güvenilir.
+  const v = process.env["GOOGLE_SERVICE_ACCOUNT_JSON"];
+  return typeof v === "string" ? v.trim() : undefined;
+}
+
 function getCredentials(): { client_email: string; private_key: string } | null {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
+  const raw = getGoogleServiceAccountJsonRaw();
   if (!raw) return null;
   try {
     const j = JSON.parse(raw) as { client_email?: string; private_key?: string };
