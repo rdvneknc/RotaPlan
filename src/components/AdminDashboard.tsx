@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Student, SchoolInfo, Vehicle, Session } from "@/lib/types";
 import { fetchStudents, fetchVehicles, fetchSessions } from "@/lib/actions";
 import SchoolSettings from "./SchoolSettings";
+import GoogleSheetSettings from "./GoogleSheetSettings";
 import StudentManagement from "./StudentManagement";
 import DailyListEditor from "./DailyListEditor";
 import VehicleManagement from "./VehicleManagement";
@@ -12,24 +13,37 @@ import Link from "next/link";
 import { ADMIN_PAGE_CONTAINER } from "@/lib/admin-layout";
 
 interface Props {
+  schoolId: string;
   initialStudents: Student[];
   initialSchool: SchoolInfo;
   initialVehicles: Vehicle[];
   initialSessions: Session[];
+  initialGoogleSheetId?: string;
+  googleSheetsShareEmail: string | null;
+  googleSheetsConfigured: boolean;
 }
 
-export default function AdminDashboard({ initialStudents, initialSchool, initialVehicles, initialSessions }: Props) {
+export default function AdminDashboard({
+  schoolId,
+  initialStudents,
+  initialSchool,
+  initialVehicles,
+  initialSessions,
+  initialGoogleSheetId,
+  googleSheetsShareEmail,
+  googleSheetsConfigured,
+}: Props) {
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles);
   const [sessions, setSessions] = useState<Session[]>(initialSessions);
   const [activeTab, setActiveTab] = useState<"daily" | "program" | "students" | "sessions" | "vehicles" | "school">("daily");
 
   const refresh = useCallback(async () => {
-    const [s, v, ses] = await Promise.all([fetchStudents(), fetchVehicles(), fetchSessions()]);
+    const [s, v, ses] = await Promise.all([fetchStudents(schoolId), fetchVehicles(schoolId), fetchSessions(schoolId)]);
     setStudents(s);
     setVehicles(v);
     setSessions(ses);
-  }, []);
+  }, [schoolId]);
 
   useEffect(() => {
     const interval = setInterval(refresh, 3000);
@@ -42,7 +56,7 @@ export default function AdminDashboard({ initialStudents, initialSchool, initial
     { id: "daily" as const, label: "Günlük Liste", count: activeCount },
     { id: "program" as const, label: "Program", count: null },
     { id: "students" as const, label: "Öğrenciler", count: students.length },
-    { id: "sessions" as const, label: "Seanslar", count: sessions.length },
+    { id: "sessions" as const, label: "Ders Saatleri", count: sessions.length },
     { id: "vehicles" as const, label: "Araçlar", count: vehicles.length },
     { id: "school" as const, label: "Okul", count: null },
   ];
@@ -99,7 +113,7 @@ export default function AdminDashboard({ initialStudents, initialSchool, initial
       </div>
 
       {activeTab === "daily" && (
-        <DailyListEditor students={students} vehicles={vehicles} sessions={sessions} onRefresh={refresh} />
+        <DailyListEditor schoolId={schoolId} students={students} vehicles={vehicles} sessions={sessions} onRefresh={refresh} />
       )}
 
       {activeTab === "program" && (
@@ -109,7 +123,7 @@ export default function AdminDashboard({ initialStudents, initialSchool, initial
             Haftalık programı geniş tablo görünümünde düzenleyin. Her gün için hangi öğrencinin hangi seansta olacağını belirleyin.
           </p>
           <Link
-            href="/admin/program"
+            href={`/admin/${schoolId}/program`}
             className="inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold text-dark-900 bg-accent hover:bg-accent-hover rounded-xl transition"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -121,19 +135,27 @@ export default function AdminDashboard({ initialStudents, initialSchool, initial
       )}
 
       {activeTab === "students" && (
-        <StudentManagement students={students} vehicles={vehicles} sessions={sessions} onRefresh={refresh} />
+        <StudentManagement schoolId={schoolId} students={students} vehicles={vehicles} sessions={sessions} onRefresh={refresh} />
       )}
 
       {activeTab === "sessions" && (
-        <SessionManagement sessions={sessions} onRefresh={refresh} />
+        <SessionManagement schoolId={schoolId} sessions={sessions} onRefresh={refresh} />
       )}
 
       {activeTab === "vehicles" && (
-        <VehicleManagement vehicles={vehicles} onRefresh={refresh} />
+        <VehicleManagement schoolId={schoolId} vehicles={vehicles} onRefresh={refresh} />
       )}
 
       {activeTab === "school" && (
-        <SchoolSettings initialSchool={initialSchool} />
+        <div className="space-y-5">
+          <SchoolSettings schoolId={schoolId} initialSchool={initialSchool} />
+          <GoogleSheetSettings
+            schoolId={schoolId}
+            initialSheetId={initialGoogleSheetId}
+            shareEmail={googleSheetsShareEmail}
+            sheetsConfigured={googleSheetsConfigured}
+          />
+        </div>
       )}
     </main>
   );

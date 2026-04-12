@@ -4,10 +4,11 @@ import { useState } from "react";
 import { createStudent } from "@/lib/actions";
 
 interface Props {
+  schoolId: string;
   onDone: () => void;
 }
 
-export default function AddStudentForm({ onDone }: Props) {
+export default function AddStudentForm({ schoolId, onDone }: Props) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -18,7 +19,7 @@ export default function AddStudentForm({ onDone }: Props) {
 
     const form = e.currentTarget;
     const formData = new FormData(form);
-    const result = await createStudent(formData);
+    const result = await createStudent(schoolId, formData);
 
     if (result.error) {
       setError(result.error);

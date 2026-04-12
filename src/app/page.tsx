@@ -1,7 +1,18 @@
 import Link from "next/link";
+import { getSession } from "@/lib/session";
+import { redirect } from "next/navigation";
 
 // v0.2
-export default function Home() {
+export default async function Home() {
+  const session = await getSession();
+  if (session) {
+    if (session.mustChangePassword) redirect("/sifre-degistir");
+    if (session.role === "superadmin") redirect("/super-admin");
+    if (session.role === "driver" && session.schoolId && session.vehicleSlug) {
+      redirect(`/sofor/${session.schoolId}/${session.vehicleSlug}`);
+    }
+    if (session.schoolId) redirect(`/admin/${session.schoolId}`);
+  }
   return (
     <div className="min-h-screen bg-dark-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-8">
@@ -17,38 +28,40 @@ export default function Home() {
 
         <div className="space-y-3">
           <Link
-            href="/admin"
+            href="/login"
             className="flex items-center gap-4 bg-dark-800 border border-dark-500 rounded-2xl p-5 hover:border-accent/50 hover:bg-dark-700 transition group"
           >
             <div className="w-14 h-14 rounded-xl bg-accent/10 text-accent flex items-center justify-center shrink-0 group-hover:bg-accent/20 transition">
               <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
             </div>
             <div>
-              <p className="text-base font-semibold text-white">Admin Paneli</p>
-              <p className="text-sm text-gray-500">Öğrenci ekle, düzenle, günlük listeyi hazırla</p>
+              <p className="text-base font-semibold text-white">Admin</p>
+              <p className="text-sm text-gray-500">E-posta ve şifre ile yönetim paneli</p>
             </div>
           </Link>
-
           <Link
-            href="/sofor"
-            className="flex items-center gap-4 bg-dark-800 border border-dark-500 rounded-2xl p-5 hover:border-accent/50 hover:bg-dark-700 transition group"
+            href="/login?tip=sofor"
+            className="flex items-center gap-4 bg-dark-800 border border-dark-500 rounded-2xl p-5 hover:border-sky-500/40 hover:bg-dark-700 transition group"
           >
-            <div className="w-14 h-14 rounded-xl bg-accent/10 text-accent flex items-center justify-center shrink-0 group-hover:bg-accent/20 transition">
+            <div className="w-14 h-14 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center shrink-0 group-hover:bg-sky-500/20 transition">
               <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"
+                />
               </svg>
             </div>
             <div>
-              <p className="text-base font-semibold text-white">Şoför Paneli</p>
-              <p className="text-sm text-gray-500">Bugünkü listeyi gör, rota oluştur</p>
+              <p className="text-base font-semibold text-white">Şoför</p>
+              <p className="text-sm text-gray-500">Kullanıcı adı ile şoför ekranı (şifre yok)</p>
             </div>
           </Link>
         </div>
 
-        <p className="text-center text-xs text-gray-600">RotaPlan v0.1</p>
+        <p className="text-center text-xs text-gray-600">RotaPlan v0.2</p>
       </div>
     </div>
   );

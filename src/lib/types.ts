@@ -17,10 +17,21 @@ export interface Student {
 export interface Session {
   id: string;
   label: string;
-  time: string;
-  type: "pickup" | "dropoff";
+  time: string; // ders başlangıç saati, ör. "09:00"
   studentIds: string[];
 }
+
+export interface DistributionGroup {
+  type: "pickup" | "dropoff";
+  time: string;
+  sessionId: string;
+  label: string;
+  studentAssignments: { studentId: string; vehicleId: string; order: number }[];
+}
+
+export type DailyDistribution = {
+  [groupId: string]: DistributionGroup;
+};
 
 export interface Vehicle {
   id: string;
@@ -28,6 +39,8 @@ export interface Vehicle {
   driverName: string;
   plate: string;
   capacity: number;
+  /** Şoför girişi — küçük harf, tüm okullarda benzersiz (şifre yok) */
+  loginUsername: string;
 }
 
 export interface SchoolInfo {
@@ -35,6 +48,30 @@ export interface SchoolInfo {
   lat: number;
   lng: number;
   mapsUrl: string;
+}
+
+export interface School {
+  id: string;
+  name: string;
+  label: string;
+  lat: number;
+  lng: number;
+  mapsUrl: string;
+  adminEmail?: string;
+  /** Google Sheets dosya ID’si (URL’den veya düz ID). */
+  googleSheetId?: string;
+  createdAt: string;
+}
+
+export interface AppUser {
+  id: string;
+  email: string;
+  passwordHash: string;
+  salt: string;
+  schoolId: string | null;
+  role: "superadmin" | "admin";
+  mustChangePassword: boolean;
+  createdAt: string;
 }
 
 export interface Coordinates {

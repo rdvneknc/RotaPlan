@@ -1,196 +1,344 @@
-import { Student, Vehicle, Session, SchoolInfo, RouteMode } from "./types";
+import { Student, Vehicle, Session, SchoolInfo, School, AppUser, RouteMode, DailyDistribution } from "./types";
 import { distributeStudents } from "./optimizer";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 
-const DATA_FILE = process.env.VERCEL
-  ? path.join("/tmp", "students.json")
-  : path.join(process.cwd(), "data", "students.json");
+// ---------------------------------------------------------------------------
+// File paths — school-scoped
+// ---------------------------------------------------------------------------
 
-// day keys: 1=Pazartesi, 2=Sali, 3=Carsamba, 4=Persembe, 5=Cuma
+const BASE_DIR = process.env.VERCEL ? "/tmp" : path.join(process.cwd(), "data");
+
+function registryFile(): string {
+  return path.join(BASE_DIR, "registry.json");
+}
+
+function schoolDataFile(schoolId: string): string {
+  return path.join(BASE_DIR, "schools", `${schoolId}.json`);
+}
+
+function ensureDir(filePath: string) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+// ---------------------------------------------------------------------------
+// Registry: School list
+// ---------------------------------------------------------------------------
+
+interface RegistryData {
+  schools: School[];
+  users: AppUser[];
+  nextSchoolId: number;
+  nextUserId: number;
+}
+
+const DEFAULT_REGISTRY: RegistryData = { schools: [], users: [], nextSchoolId: 1, nextUserId: 1 };
+
+function readRegistry(): RegistryData {
+  try {
+    const f = registryFile();
+    if (fs.existsSync(f)) {
+      const data = JSON.parse(fs.readFileSync(f, "utf-8")) as RegistryData;
+      if (!data.schools) data.schools = [];
+      if (!data.users) data.users = [];
+      if (!data.nextSchoolId) data.nextSchoolId = 1;
+      if (!data.nextUserId) data.nextUserId = 1;
+      return data;
+    }
+  } catch { /* corrupted — reset */ }
+  saveRegistry(DEFAULT_REGISTRY);
+  return { ...DEFAULT_REGISTRY, schools: [], users: [] };
+}
+
+function saveRegistry(data: RegistryData) {
+  const f = registryFile();
+  ensureDir(f);
+  fs.writeFileSync(f, JSON.stringify(data, null, 2), "utf-8");
+}
+
+export function getSchools(): School[] {
+  return [...readRegistry().schools];
+}
+
+export function getSchoolById(id: string): School | null {
+  return readRegistry().schools.find((s) => s.id === id) ?? null;
+}
+
+export function addSchool(input: Omit<School, "id" | "createdAt">): School {
+  const reg = readRegistry();
+  const school: School = {
+    ...input,
+    id: String(reg.nextSchoolId),
+    createdAt: new Date().toISOString(),
+  };
+  reg.schools.push(school);
+  reg.nextSchoolId++;
+  saveRegistry(reg);
+
+  const defaultData = makeDefaultSchoolData({
+    label: school.label,
+    lat: school.lat,
+    lng: school.lng,
+    mapsUrl: school.mapsUrl,
+  });
+  saveSchoolData(school.id, defaultData);
+  return school;
+}
+
+export function updateSchoolRegistry(id: string, updates: Partial<Omit<School, "id" | "createdAt">>): School | null {
+  const reg = readRegistry();
+  const idx = reg.schools.findIndex((s) => s.id === id);
+  if (idx === -1) return null;
+  reg.schools[idx] = { ...reg.schools[idx], ...updates };
+  saveRegistry(reg);
+  return reg.schools[idx];
+}
+
+export function deleteSchool(id: string): boolean {
+  const reg = readRegistry();
+  const len = reg.schools.length;
+  reg.schools = reg.schools.filter((s) => s.id !== id);
+  if (reg.schools.length < len) {
+    saveRegistry(reg);
+    const f = schoolDataFile(id);
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+    return true;
+  }
+  return false;
+}
+
+export function getSchoolStats(schoolId: string): { studentCount: number; vehicleCount: number; sessionCount: number } {
+  const data = readSchoolData(schoolId);
+  return {
+    studentCount: data.students.length,
+    vehicleCount: data.vehicles.length,
+    sessionCount: data.sessions.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Users: authentication
+// ---------------------------------------------------------------------------
+
+function hashPassword(password: string, salt: string): string {
+  return crypto.pbkdf2Sync(password, salt, 10000, 64, "sha512").toString("hex");
+}
+
+function makeSalt(): string {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+export function getUsers(): AppUser[] {
+  return [...readRegistry().users];
+}
+
+export function getUsersBySchool(schoolId: string): AppUser[] {
+  return readRegistry().users.filter((u) => u.schoolId === schoolId);
+}
+
+export function getUserByEmail(email: string): AppUser | null {
+  const lower = email.toLowerCase().trim();
+  return readRegistry().users.find((u) => u.email.toLowerCase() === lower) ?? null;
+}
+
+export function getUserById(id: string): AppUser | null {
+  return readRegistry().users.find((u) => u.id === id) ?? null;
+}
+
+export function createUser(input: {
+  email: string;
+  password: string;
+  schoolId: string | null;
+  role: "superadmin" | "admin";
+}): AppUser | { error: string } {
+  const reg = readRegistry();
+  const lower = input.email.toLowerCase().trim();
+
+  if (reg.users.some((u) => u.email.toLowerCase() === lower)) {
+    return { error: "Bu e-posta zaten kullanılıyor." };
+  }
+
+  const salt = makeSalt();
+  const user: AppUser = {
+    id: String(reg.nextUserId),
+    email: lower,
+    passwordHash: hashPassword(input.password, salt),
+    salt,
+    schoolId: input.schoolId,
+    role: input.role,
+    mustChangePassword: true,
+    createdAt: new Date().toISOString(),
+  };
+  reg.users.push(user);
+  reg.nextUserId++;
+  saveRegistry(reg);
+  return user;
+}
+
+export function validateUser(email: string, password: string): AppUser | null {
+  const user = getUserByEmail(email);
+  if (!user) return null;
+  const hash = hashPassword(password, user.salt);
+  if (hash !== user.passwordHash) return null;
+  return user;
+}
+
+export function changeUserPassword(userId: string, newPassword: string): boolean {
+  return setUserPassword(userId, newPassword, false);
+}
+
+/** Süper admin şifre sıfırlama veya ilk atama; `mustChangePassword` genelde true (geçici şifre). */
+export function setUserPassword(userId: string, newPassword: string, mustChangePassword: boolean): boolean {
+  const reg = readRegistry();
+  const idx = reg.users.findIndex((u) => u.id === userId);
+  if (idx === -1) return false;
+  const salt = makeSalt();
+  reg.users[idx].salt = salt;
+  reg.users[idx].passwordHash = hashPassword(newPassword, salt);
+  reg.users[idx].mustChangePassword = mustChangePassword;
+  saveRegistry(reg);
+  return true;
+}
+
+export function deleteUser(userId: string): boolean {
+  const reg = readRegistry();
+  const len = reg.users.length;
+  reg.users = reg.users.filter((u) => u.id !== userId);
+  if (reg.users.length < len) {
+    saveRegistry(reg);
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// School data (per-school store — replaces old single-file store)
+// ---------------------------------------------------------------------------
+
 type WeeklySchedule = {
   [day: string]: {
     [sessionId: string]: string[];
   };
 };
 
-type DailyDistribution = {
-  [sessionId: string]: {
-    studentAssignments: { studentId: string; vehicleId: string; order: number }[];
-  };
-};
-
-/** Gün anahtarı (0–6) → o gün dağıtıma dahil araç id listesi. Tanımsızsa tüm araçlar çalışır sayılır. */
 type WeeklyWorkingVehicles = { [day: string]: string[] };
+
+type DistributionByDay = { [dayKey: string]: DailyDistribution };
 
 interface StoreData {
   school: SchoolInfo;
   students: Student[];
   vehicles: Vehicle[];
   sessions: Session[];
+  classDuration: number;
   weeklySchedule: WeeklySchedule;
   weeklyWorkingVehicles: WeeklyWorkingVehicles;
-  dailyDistribution: DailyDistribution | null;
+  distributionByDay: DistributionByDay;
+  /** @deprecated migrate → distributionByDay */
+  dailyDistribution?: DailyDistribution | null;
   currentSessionId: string | null;
   nextId: number;
   nextVehicleId: number;
   nextSessionId: number;
 }
 
-const DEFAULT_DATA: StoreData = {
-  school: {
-    label: "Ereğli, Konya",
-    lat: 37.5126,
-    lng: 34.0489,
-    mapsUrl: "https://www.google.com/maps/@37.5126,34.0489,15z",
-  },
-  students: [
-    {
-      id: "1",
-      name: "Ahmet Yılmaz",
-      label: "Barbaros Mah.",
-      lat: 37.5185,
-      lng: 34.0512,
-      mapsUrl: "https://www.google.com/maps/@37.5185,34.0512,17z",
-      isActive: false,
-      vehicleId: null,
-      sessionIds: ["1", "2"],
-      contact1Name: "Baba Süleyman",
-      contact1Phone: "505 226 91 88",
-      contact2Name: "Anne Gülsüm",
-      contact2Phone: "505 717 09 28",
-    },
-    {
-      id: "2",
-      name: "Elif Demir",
-      label: "Cırgalan Mah.",
-      lat: 37.5098,
-      lng: 34.0378,
-      mapsUrl: "https://www.google.com/maps/@37.5098,34.0378,17z",
-      isActive: false,
-      vehicleId: null,
-      sessionIds: ["1", "2"],
-      contact1Name: "Baba Osman",
-      contact1Phone: "541 369 29 89",
-      contact2Name: "Anne Hacer",
-      contact2Phone: "505 724 66 20",
-    },
-    {
-      id: "3",
-      name: "Can Özkan",
-      label: "Zengen Mah.",
-      lat: 37.5211,
-      lng: 34.0601,
-      mapsUrl: "https://www.google.com/maps/@37.5211,34.0601,17z",
-      isActive: false,
-      vehicleId: null,
-      sessionIds: ["3", "4"],
-      contact1Name: "",
-      contact1Phone: "",
-      contact2Name: "",
-      contact2Phone: "",
-    },
-    {
-      id: "4",
-      name: "Zeynep Kaya",
-      label: "Orta Mah.",
-      lat: 37.515,
-      lng: 34.045,
-      mapsUrl: "https://www.google.com/maps/@37.5150,34.0450,17z",
-      isActive: false,
-      vehicleId: null,
-      sessionIds: ["3", "4"],
-      contact1Name: "",
-      contact1Phone: "",
-      contact2Name: "",
-      contact2Phone: "",
-    },
-    {
-      id: "5",
-      name: "Mehmet Çelik",
-      label: "Selçuklu Mah.",
-      lat: 37.523,
-      lng: 34.055,
-      mapsUrl: "https://www.google.com/maps/@37.5230,34.0550,17z",
-      isActive: false,
-      vehicleId: null,
-      sessionIds: ["1", "2", "3", "4"],
-      contact1Name: "",
-      contact1Phone: "",
-      contact2Name: "",
-      contact2Phone: "",
-    },
-    {
-      id: "6",
-      name: "Ayşe Yıldız",
-      label: "Atatürk Mah.",
-      lat: 37.507,
-      lng: 34.042,
-      mapsUrl: "https://www.google.com/maps/@37.5070,34.0420,17z",
-      isActive: false,
-      vehicleId: null,
-      sessionIds: ["1", "2"],
-      contact1Name: "",
-      contact1Phone: "",
-      contact2Name: "",
-      contact2Phone: "",
-    },
-  ],
-  vehicles: [
-    {
-      id: "1",
-      slug: "servis-a",
-      driverName: "Ali Usta",
-      plate: "42 ABC 001",
-      capacity: 8,
-    },
-    {
-      id: "2",
-      slug: "servis-b",
-      driverName: "Veli Usta",
-      plate: "42 ABC 002",
-      capacity: 8,
-    },
-  ],
-  sessions: [
-    { id: "1", label: "09:00 Giriş", time: "09:00", type: "pickup", studentIds: ["1", "2", "5", "6"] },
-    { id: "2", label: "09:40 Çıkış", time: "09:40", type: "dropoff", studentIds: ["1", "2", "5", "6"] },
-    { id: "3", label: "10:00 Giriş", time: "10:00", type: "pickup", studentIds: ["3", "4", "5"] },
-    { id: "4", label: "10:40 Çıkış", time: "10:40", type: "dropoff", studentIds: ["3", "4", "5"] },
-  ],
-  weeklySchedule: {
-    "1": { "1": ["1", "2", "5", "6"], "2": ["1", "2", "5", "6"], "3": ["3", "4", "5"], "4": ["3", "4", "5"] },
-    "2": { "1": ["1", "2", "5", "6"], "2": ["1", "2", "5", "6"], "3": ["3", "4", "5"], "4": ["3", "4", "5"] },
-    "3": { "1": ["1", "2", "5", "6"], "2": ["1", "2", "5", "6"], "3": ["3", "4", "5"], "4": ["3", "4", "5"] },
-    "4": { "1": ["1", "2", "5", "6"], "2": ["1", "2", "5", "6"], "3": ["3", "4", "5"], "4": ["3", "4", "5"] },
-    "5": { "1": ["1", "2", "5", "6"], "2": ["1", "2", "5", "6"], "3": ["3", "4", "5"], "4": ["3", "4", "5"] },
-  },
-  weeklyWorkingVehicles: {},
-  dailyDistribution: null,
-  currentSessionId: null,
-  nextId: 7,
-  nextVehicleId: 3,
-  nextSessionId: 5,
-};
+const ALL_WEEK_DAY_KEYS = ["1", "2", "3", "4", "5", "6", "0"] as const;
+
+function ensureDistributionByDay(data: StoreData): DistributionByDay {
+  if (!data.distributionByDay) data.distributionByDay = {};
+  const legacy = data.dailyDistribution;
+  if (legacy && Object.keys(legacy).length > 0) {
+    const tk = String(new Date().getDay());
+    if (!data.distributionByDay[tk] || Object.keys(data.distributionByDay[tk]).length === 0) {
+      data.distributionByDay[tk] = legacy;
+    }
+    delete data.dailyDistribution;
+  }
+  return data.distributionByDay;
+}
+
+function getTodayDistribution(data: StoreData): DailyDistribution | null {
+  const map = ensureDistributionByDay(data);
+  const d = map[String(new Date().getDay())];
+  if (!d || Object.keys(d).length === 0) return null;
+  return d;
+}
+
+function addMinutesToTime(time: string, minutes: number): string {
+  const m = time.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return time;
+  let h = parseInt(m[1], 10);
+  let min = parseInt(m[2], 10) + minutes;
+  h += Math.floor(min / 60);
+  min = min % 60;
+  h = h % 24;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+function makeDefaultSchoolData(school: SchoolInfo): StoreData {
+  return {
+    school,
+    students: [],
+    vehicles: [],
+    sessions: [],
+    classDuration: 40,
+    weeklySchedule: {},
+    weeklyWorkingVehicles: {},
+    distributionByDay: {},
+    currentSessionId: null,
+    nextId: 1,
+    nextVehicleId: 1,
+    nextSessionId: 1,
+  };
+}
 
 function generateSlug(): string {
   return crypto.randomBytes(4).toString("hex");
 }
 
-function ensureDataDir() {
-  const dir = path.dirname(DATA_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+function migrateSessionTypes(data: StoreData) {
+  const hasType = data.sessions.some((s: any) => (s as any).type != null);
+  if (!hasType) return;
+
+  const dropoffIds = new Set(
+    data.sessions.filter((s: any) => (s as any).type === "dropoff").map((s) => s.id)
+  );
+
+  data.sessions = data.sessions
+    .filter((s: any) => (s as any).type !== "dropoff")
+    .map((s: any) => {
+      const { type, ...rest } = s;
+      rest.label = rest.label
+        .replace(/\s*[Gg]iriş$/i, "")
+        .replace(/\s*[Gg][İi][Rr][İi][Şş]$/i, "")
+        .trim();
+      if (!rest.label) rest.label = rest.time;
+      return rest as Session;
+    });
+
+  for (const day of Object.keys(data.weeklySchedule)) {
+    for (const sid of dropoffIds) {
+      delete data.weeklySchedule[day]?.[sid];
+    }
   }
+
+  for (const student of data.students) {
+    student.sessionIds = student.sessionIds.filter((id) => !dropoffIds.has(id));
+  }
+
+  data.distributionByDay = {};
+  delete data.dailyDistribution;
 }
 
-function readData(): StoreData {
+function readSchoolData(schoolId: string): StoreData {
   try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, "utf-8");
+    const f = schoolDataFile(schoolId);
+    if (fs.existsSync(f)) {
+      const raw = fs.readFileSync(f, "utf-8");
       const data = JSON.parse(raw);
-      if (!data.school) data.school = DEFAULT_DATA.school;
+      if (!data.school) data.school = { label: "", lat: 0, lng: 0, mapsUrl: "" };
       if (!data.vehicles) data.vehicles = [];
       if (!data.nextVehicleId) data.nextVehicleId = 1;
       if (!data.sessions) data.sessions = [];
@@ -198,7 +346,10 @@ function readData(): StoreData {
       if (data.currentSessionId === undefined) data.currentSessionId = null;
       if (!data.weeklySchedule) data.weeklySchedule = {};
       if (!data.weeklyWorkingVehicles) data.weeklyWorkingVehicles = {};
+      if (!data.distributionByDay) data.distributionByDay = {};
       if (data.dailyDistribution === undefined) data.dailyDistribution = null;
+      if (!data.classDuration) data.classDuration = 40;
+      if (!data.nextId) data.nextId = 1;
       data.students = (data.students || []).map((s: Student) => ({
         ...s,
         vehicleId: s.vehicleId ?? null,
@@ -208,74 +359,95 @@ function readData(): StoreData {
         contact2Name: s.contact2Name ?? "",
         contact2Phone: s.contact2Phone ?? "",
       }));
+      migrateSessionTypes(data);
+      for (const v of data.vehicles as Vehicle[]) {
+        if (v.loginUsername === undefined) v.loginUsername = "";
+        delete (v as unknown as { passwordHash?: string }).passwordHash;
+        delete (v as unknown as { salt?: string }).salt;
+      }
+      ensureDistributionByDay(data);
       return data;
     }
   } catch {
-    // corrupted — reset
+    // corrupted — return empty
   }
-  saveData(DEFAULT_DATA);
-  return DEFAULT_DATA;
+  const empty = makeDefaultSchoolData({ label: "", lat: 0, lng: 0, mapsUrl: "" });
+  saveSchoolData(schoolId, empty);
+  return empty;
 }
 
-function saveData(data: StoreData) {
-  ensureDataDir();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf-8");
+function saveSchoolData(schoolId: string, data: StoreData) {
+  const f = schoolDataFile(schoolId);
+  ensureDir(f);
+  fs.writeFileSync(f, JSON.stringify(data, null, 2), "utf-8");
 }
 
-// --- School ---
+// ---------------------------------------------------------------------------
+// School info (per-school)
+// ---------------------------------------------------------------------------
 
-export function getSchool(): SchoolInfo {
-  return { ...readData().school };
+export function getSchool(schoolId: string): SchoolInfo {
+  return { ...readSchoolData(schoolId).school };
 }
 
-export function updateSchool(school: SchoolInfo) {
-  const data = readData();
+export function updateSchool(schoolId: string, school: SchoolInfo) {
+  const data = readSchoolData(schoolId);
   data.school = school;
-  saveData(data);
+  saveSchoolData(schoolId, data);
 }
 
-// --- Sessions ---
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
 
-export function getSessions(): Session[] {
-  return [...readData().sessions];
+export function getSessions(schoolId: string): Session[] {
+  return [...readSchoolData(schoolId).sessions];
 }
 
-export function getSessionById(id: string): Session | null {
-  const data = readData();
+export function getSessionById(schoolId: string, id: string): Session | null {
+  const data = readSchoolData(schoolId);
   return data.sessions.find((s) => s.id === id) || null;
 }
 
-export function getCurrentSession(): Session | null {
-  const data = readData();
+export function getCurrentSession(schoolId: string): Session | null {
+  const data = readSchoolData(schoolId);
   if (!data.currentSessionId) return null;
   return data.sessions.find((s) => s.id === data.currentSessionId) || null;
 }
 
-export function addSession(input: { label: string; time: string; type: "pickup" | "dropoff"; studentIds: string[] }): Session {
-  const data = readData();
+export function getClassDuration(schoolId: string): number {
+  return readSchoolData(schoolId).classDuration;
+}
+
+export function setClassDuration(schoolId: string, minutes: number) {
+  const data = readSchoolData(schoolId);
+  data.classDuration = Math.max(1, Math.min(120, minutes));
+  saveSchoolData(schoolId, data);
+}
+
+export function addSession(schoolId: string, input: { label: string; time: string; studentIds: string[] }): Session {
+  const data = readSchoolData(schoolId);
   const session: Session = {
     id: String(data.nextSessionId),
     label: input.label,
     time: input.time,
-    type: input.type,
     studentIds: input.studentIds,
   };
   data.sessions.push(session);
   data.nextSessionId++;
 
-  // Sync sessionIds on students
   for (const student of data.students) {
     if (input.studentIds.includes(student.id) && !student.sessionIds.includes(session.id)) {
       student.sessionIds.push(session.id);
     }
   }
 
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return session;
 }
 
-export function updateSession(id: string, updates: { label?: string; time?: string; type?: "pickup" | "dropoff"; studentIds?: string[] }): Session | null {
-  const data = readData();
+export function updateSession(schoolId: string, id: string, updates: { label?: string; time?: string; studentIds?: string[] }): Session | null {
+  const data = readSchoolData(schoolId);
   const index = data.sessions.findIndex((s) => s.id === id);
   if (index === -1) return null;
 
@@ -283,7 +455,6 @@ export function updateSession(id: string, updates: { label?: string; time?: stri
   data.sessions[index] = { ...old, ...updates };
   const updated = data.sessions[index];
 
-  // Sync sessionIds on students if studentIds changed
   if (updates.studentIds) {
     for (const student of data.students) {
       const wasIn = old.studentIds.includes(student.id);
@@ -296,16 +467,15 @@ export function updateSession(id: string, updates: { label?: string; time?: stri
     }
   }
 
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return updated;
 }
 
-export function deleteSession(id: string): boolean {
-  const data = readData();
+export function deleteSession(schoolId: string, id: string): boolean {
+  const data = readSchoolData(schoolId);
   const length = data.sessions.length;
   data.sessions = data.sessions.filter((s) => s.id !== id);
 
-  // Remove session from students
   for (const student of data.students) {
     student.sessionIds = student.sessionIds.filter((sid) => sid !== id);
   }
@@ -315,30 +485,27 @@ export function deleteSession(id: string): boolean {
   }
 
   if (data.sessions.length < length) {
-    saveData(data);
+    saveSchoolData(schoolId, data);
     return true;
   }
   return false;
 }
 
-export function loadSession(sessionId: string): { error?: string; loaded?: number } {
-  const data = readData();
+export function loadSession(schoolId: string, sessionId: string): { error?: string; loaded?: number } {
+  const data = readSchoolData(schoolId);
   const session = data.sessions.find((s) => s.id === sessionId);
   if (!session) return { error: "Seans bulunamadı." };
 
-  // Determine which students to load: check weekly schedule first
-  const today = new Date().getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const today = new Date().getDay();
   const dayKey = String(today);
   const daySchedule = data.weeklySchedule[dayKey];
   const studentIds = daySchedule?.[sessionId] ?? session.studentIds;
 
-  // Deactivate all students and clear vehicle assignments
   for (const student of data.students) {
     student.isActive = false;
     student.vehicleId = null;
   }
 
-  // Activate students
   let loaded = 0;
   for (const student of data.students) {
     if (studentIds.includes(student.id)) {
@@ -348,96 +515,152 @@ export function loadSession(sessionId: string): { error?: string; loaded?: numbe
   }
 
   data.currentSessionId = sessionId;
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return { loaded };
 }
 
-// --- Weekly Schedule ---
+// ---------------------------------------------------------------------------
+// Weekly Schedule
+// ---------------------------------------------------------------------------
 
-export function getWeeklySchedule(): WeeklySchedule {
-  return { ...readData().weeklySchedule };
+export function getWeeklySchedule(schoolId: string): WeeklySchedule {
+  return { ...readSchoolData(schoolId).weeklySchedule };
 }
 
-export function setWeeklyScheduleDay(day: string, sessionId: string, studentIds: string[]) {
-  const data = readData();
+export function setWeeklyScheduleDay(schoolId: string, day: string, sessionId: string, studentIds: string[]) {
+  const data = readSchoolData(schoolId);
   if (!data.weeklySchedule[day]) {
     data.weeklySchedule[day] = {};
   }
   data.weeklySchedule[day][sessionId] = studentIds;
-  saveData(data);
+  saveSchoolData(schoolId, data);
 }
 
-export function getWeeklyScheduleForDay(day: string): { [sessionId: string]: string[] } {
-  const data = readData();
+export function getWeeklyScheduleForDay(schoolId: string, day: string): { [sessionId: string]: string[] } {
+  const data = readSchoolData(schoolId);
   return data.weeklySchedule[day] || {};
 }
 
-// --- Vehicles ---
+// ---------------------------------------------------------------------------
+// Vehicles
+// ---------------------------------------------------------------------------
 
-export function getVehicles(): Vehicle[] {
-  return [...readData().vehicles];
+export function getVehicles(schoolId: string): Vehicle[] {
+  return [...readSchoolData(schoolId).vehicles];
 }
 
-export function getVehicleBySlug(slug: string): Vehicle | null {
-  const data = readData();
+export function getVehicleBySlug(schoolId: string, slug: string): Vehicle | null {
+  const data = readSchoolData(schoolId);
   return data.vehicles.find((v) => v.slug === slug) || null;
 }
 
-export function getVehicleById(id: string): Vehicle | null {
-  const data = readData();
+export function getVehicleById(schoolId: string, id: string): Vehicle | null {
+  const data = readSchoolData(schoolId);
   return data.vehicles.find((v) => v.id === id) || null;
 }
 
-export function addVehicle(input: { driverName: string; plate: string; capacity: number }): Vehicle {
-  const data = readData();
+/** Şoför giriş adı — küçük harf, trim. */
+export function normalizeDriverUsername(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+export function isDriverLoginUsernameTaken(
+  username: string,
+  except?: { schoolId: string; vehicleId: string },
+): boolean {
+  const u = normalizeDriverUsername(username);
+  if (u.length < 3) return true;
+  for (const school of getSchools()) {
+    const data = readSchoolData(school.id);
+    for (const v of data.vehicles) {
+      const vu = normalizeDriverUsername(v.loginUsername || "");
+      if (!vu || vu !== u) continue;
+      if (except && except.schoolId === school.id && except.vehicleId === v.id) continue;
+      return true;
+    }
+  }
+  return false;
+}
+
+export function findVehicleByLoginUsername(username: string): { schoolId: string; vehicle: Vehicle } | null {
+  const u = normalizeDriverUsername(username);
+  if (!u) return null;
+  for (const school of getSchools()) {
+    const data = readSchoolData(school.id);
+    for (const v of data.vehicles) {
+      const vu = normalizeDriverUsername(v.loginUsername || "");
+      if (vu && vu === u) return { schoolId: school.id, vehicle: { ...v } };
+    }
+  }
+  return null;
+}
+
+/** Şoför girişi: yalnızca kullanıcı adı (şifre yok). */
+export function resolveDriverByUsername(username: string): { schoolId: string; vehicle: Vehicle } | null {
+  const found = findVehicleByLoginUsername(username);
+  if (!found) return null;
+  const u = normalizeDriverUsername(found.vehicle.loginUsername || "");
+  if (!u) return null;
+  return found;
+}
+
+export function addVehicle(
+  schoolId: string,
+  input: { driverName: string; plate: string; capacity: number; loginUsername: string },
+): Vehicle {
+  const data = readSchoolData(schoolId);
+  const loginUsername = normalizeDriverUsername(input.loginUsername);
   const vehicle: Vehicle = {
     id: String(data.nextVehicleId),
     slug: generateSlug(),
     driverName: input.driverName,
     plate: input.plate,
     capacity: input.capacity,
+    loginUsername,
   };
   data.vehicles.push(vehicle);
   data.nextVehicleId++;
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return vehicle;
 }
 
-export function updateVehicle(id: string, updates: Partial<Omit<Vehicle, "id" | "slug">>): Vehicle | null {
-  const data = readData();
+export function updateVehicle(schoolId: string, id: string, updates: Partial<Omit<Vehicle, "id" | "slug">>): Vehicle | null {
+  const data = readSchoolData(schoolId);
   const index = data.vehicles.findIndex((v) => v.id === id);
   if (index === -1) return null;
   data.vehicles[index] = { ...data.vehicles[index], ...updates };
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return data.vehicles[index];
 }
 
-export function deleteVehicle(id: string): boolean {
-  const data = readData();
+export function deleteVehicle(schoolId: string, id: string): boolean {
+  const data = readSchoolData(schoolId);
   const length = data.vehicles.length;
   data.vehicles = data.vehicles.filter((v) => v.id !== id);
   data.students.forEach((s) => {
     if (s.vehicleId === id) s.vehicleId = null;
   });
   if (data.vehicles.length < length) {
-    saveData(data);
+    saveSchoolData(schoolId, data);
     return true;
   }
   return false;
 }
 
-// --- Students ---
+// ---------------------------------------------------------------------------
+// Students
+// ---------------------------------------------------------------------------
 
-export function getStudents(): Student[] {
-  return [...readData().students];
+export function getStudents(schoolId: string): Student[] {
+  return [...readSchoolData(schoolId).students];
 }
 
-export function getStudentsByVehicle(vehicleId: string): Student[] {
-  return readData().students.filter((s) => s.vehicleId === vehicleId);
+export function getStudentsByVehicle(schoolId: string, vehicleId: string): Student[] {
+  return readSchoolData(schoolId).students.filter((s) => s.vehicleId === vehicleId);
 }
 
-export function addStudent(input: Omit<Student, "id" | "isActive">): Student {
-  const data = readData();
+export function addStudent(schoolId: string, input: Omit<Student, "id" | "isActive">): Student {
+  const data = readSchoolData(schoolId);
   const student: Student = {
     ...input,
     id: String(data.nextId),
@@ -446,7 +669,6 @@ export function addStudent(input: Omit<Student, "id" | "isActive">): Student {
   data.students.push(student);
   data.nextId++;
 
-  // Sync: add student to their sessions' studentIds
   for (const sid of student.sessionIds) {
     const session = data.sessions.find((s) => s.id === sid);
     if (session && !session.studentIds.includes(student.id)) {
@@ -454,12 +676,12 @@ export function addStudent(input: Omit<Student, "id" | "isActive">): Student {
     }
   }
 
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return student;
 }
 
-export function updateStudent(id: string, updates: Partial<Omit<Student, "id">>): Student | null {
-  const data = readData();
+export function updateStudent(schoolId: string, id: string, updates: Partial<Omit<Student, "id">>): Student | null {
+  const data = readSchoolData(schoolId);
   const index = data.students.findIndex((s) => s.id === id);
   if (index === -1) return null;
 
@@ -467,9 +689,7 @@ export function updateStudent(id: string, updates: Partial<Omit<Student, "id">>)
   data.students[index] = { ...data.students[index], ...updates };
   const newSessionIds = data.students[index].sessionIds || [];
 
-  // Sync sessions when sessionIds change
   if (updates.sessionIds) {
-    // Remove student from old sessions
     for (const sid of oldSessionIds) {
       if (!newSessionIds.includes(sid)) {
         const session = data.sessions.find((s) => s.id === sid);
@@ -478,7 +698,6 @@ export function updateStudent(id: string, updates: Partial<Omit<Student, "id">>)
         }
       }
     }
-    // Add student to new sessions
     for (const sid of newSessionIds) {
       if (!oldSessionIds.includes(sid)) {
         const session = data.sessions.find((s) => s.id === sid);
@@ -489,61 +708,60 @@ export function updateStudent(id: string, updates: Partial<Omit<Student, "id">>)
     }
   }
 
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return data.students[index];
 }
 
-export function deleteStudent(id: string): boolean {
-  const data = readData();
+export function deleteStudent(schoolId: string, id: string): boolean {
+  const data = readSchoolData(schoolId);
   const length = data.students.length;
   data.students = data.students.filter((s) => s.id !== id);
 
-  // Remove student from all sessions
   for (const session of data.sessions) {
     session.studentIds = session.studentIds.filter((sId) => sId !== id);
   }
 
   if (data.students.length < length) {
-    saveData(data);
+    saveSchoolData(schoolId, data);
     return true;
   }
   return false;
 }
 
-export function toggleStudentActive(id: string): Student | null {
-  const data = readData();
+export function toggleStudentActive(schoolId: string, id: string): Student | null {
+  const data = readSchoolData(schoolId);
   const student = data.students.find((s) => s.id === id);
   if (!student) return null;
   student.isActive = !student.isActive;
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return { ...student };
 }
 
-export function setAllStudentsActiveByVehicle(vehicleId: string, active: boolean) {
-  const data = readData();
+export function setAllStudentsActiveByVehicle(schoolId: string, vehicleId: string, active: boolean) {
+  const data = readSchoolData(schoolId);
   data.students.forEach((s) => {
     if (s.vehicleId === vehicleId) s.isActive = active;
   });
-  saveData(data);
+  saveSchoolData(schoolId, data);
 }
 
-export function setAllStudentsActive(active: boolean) {
-  const data = readData();
+export function setAllStudentsActive(schoolId: string, active: boolean) {
+  const data = readSchoolData(schoolId);
   data.students.forEach((s) => (s.isActive = active));
-  saveData(data);
+  saveSchoolData(schoolId, data);
 }
 
-export function assignStudentToVehicle(studentId: string, vehicleId: string | null): Student | null {
-  const data = readData();
+export function assignStudentToVehicle(schoolId: string, studentId: string, vehicleId: string | null): Student | null {
+  const data = readSchoolData(schoolId);
   const student = data.students.find((s) => s.id === studentId);
   if (!student) return null;
   student.vehicleId = vehicleId;
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return { ...student };
 }
 
-export function reorderStudent(id: string, direction: "up" | "down"): boolean {
-  const data = readData();
+export function reorderStudent(schoolId: string, id: string, direction: "up" | "down"): boolean {
+  const data = readSchoolData(schoolId);
   const index = data.students.findIndex((s) => s.id === id);
   if (index === -1) return false;
 
@@ -551,22 +769,24 @@ export function reorderStudent(id: string, direction: "up" | "down"): boolean {
   if (targetIndex < 0 || targetIndex >= data.students.length) return false;
 
   [data.students[index], data.students[targetIndex]] = [data.students[targetIndex], data.students[index]];
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return true;
 }
 
-// --- Güne göre çalışan araçlar ---
+// ---------------------------------------------------------------------------
+// Working vehicles per day
+// ---------------------------------------------------------------------------
 
-export function getWorkingVehicleIdsForDay(dayKey: string): string[] {
-  const data = readData();
+export function getWorkingVehicleIdsForDay(schoolId: string, dayKey: string): string[] {
+  const data = readSchoolData(schoolId);
   const allIds = data.vehicles.map((v) => v.id);
   const configured = data.weeklyWorkingVehicles?.[dayKey];
   if (configured === undefined) return [...allIds];
   return configured.filter((id) => allIds.includes(id));
 }
 
-export function setWorkingVehicleIdsForDay(dayKey: string, vehicleIds: string[]): { error?: string } {
-  const data = readData();
+export function setWorkingVehicleIdsForDay(schoolId: string, dayKey: string, vehicleIds: string[]): { error?: string } {
+  const data = readSchoolData(schoolId);
   if (vehicleIds.length === 0) {
     return { error: "En az bir araç seçmelisiniz." };
   }
@@ -576,86 +796,218 @@ export function setWorkingVehicleIdsForDay(dayKey: string, vehicleIds: string[])
   }
   if (!data.weeklyWorkingVehicles) data.weeklyWorkingVehicles = {};
   data.weeklyWorkingVehicles[dayKey] = vehicleIds;
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return {};
 }
 
-export function isVehicleWorkingToday(vehicleId: string): boolean {
-  const data = readData();
+export function isVehicleWorkingToday(schoolId: string, vehicleId: string): boolean {
+  const data = readSchoolData(schoolId);
   const dayKey = String(new Date().getDay());
   const configured = data.weeklyWorkingVehicles?.[dayKey];
   if (configured === undefined) return true;
   return configured.includes(vehicleId);
 }
 
-// --- Daily Full Distribution ---
+// ---------------------------------------------------------------------------
+// Daily Full Distribution
+// ---------------------------------------------------------------------------
 
-export function distributeDailyAll(): {
+function countUniqueStudentsOnDay(data: StoreData, dayKey: string): number {
+  const daySchedule = data.weeklySchedule[dayKey] || {};
+  const u = new Set<string>();
+  for (const session of data.sessions) {
+    const studentIds = daySchedule[session.id] ?? session.studentIds;
+    for (const sid of studentIds) {
+      if (data.students.some((s) => s.id === sid)) u.add(sid);
+    }
+  }
+  return u.size;
+}
+
+function buildDistributionForDay(data: StoreData, dayKey: string): {
   error?: string;
-  sessionCount?: number;
-  totalStudents?: number;
-  vehicleCount?: number;
+  distribution: DailyDistribution;
+  groupCount: number;
+  uniqueStudents: number;
+  vehicleCount: number;
 } {
-  const data = readData();
-  if (data.vehicles.length === 0) {
-    return { error: "Araç tanımlanmamış. Önce Araçlar sekmesinden araç ekleyin." };
+  const uniqueOnDay = countUniqueStudentsOnDay(data, dayKey);
+  if (uniqueOnDay === 0) {
+    return { distribution: {}, groupCount: 0, uniqueStudents: 0, vehicleCount: 0 };
   }
 
-  const today = new Date().getDay();
-  const dayKey = String(today);
+  if (data.vehicles.length === 0) {
+    return { error: "Araç tanımlanmamış. Önce Araçlar sekmesinden araç ekleyin.", distribution: {}, groupCount: 0, uniqueStudents: uniqueOnDay, vehicleCount: 0 };
+  }
+
   const configured = data.weeklyWorkingVehicles?.[dayKey];
   let vehiclesToUse: Vehicle[];
   if (configured === undefined) {
     vehiclesToUse = data.vehicles;
   } else {
     if (configured.length === 0) {
-      return { error: "Bugün çalışan araç seçilmedi. Önce listeden en az bir şoför işaretleyin." };
+      return {
+        error: "Bu gün için çalışan araç seçilmedi. Önce listeden en az bir şoför işaretleyin.",
+        distribution: {},
+        groupCount: 0,
+        uniqueStudents: uniqueOnDay,
+        vehicleCount: 0,
+      };
     }
     const allowed = new Set(configured);
     vehiclesToUse = data.vehicles.filter((v) => allowed.has(v.id));
     if (vehiclesToUse.length === 0) {
-      return { error: "Seçilen araçlar bulunamadı. Araç listesini kontrol edin." };
+      return { error: "Seçilen araçlar bulunamadı.", distribution: {}, groupCount: 0, uniqueStudents: 0, vehicleCount: 0 };
     }
   }
 
   const daySchedule = data.weeklySchedule[dayKey] || {};
+  const sortedSessions = [...data.sessions].sort((a, b) => a.time.localeCompare(b.time));
 
-  const distribution: DailyDistribution = {};
-  let totalStudents = 0;
+  const studentFirstSession = new Map<string, string>();
+  const studentLastSession = new Map<string, string>();
 
-  for (const session of data.sessions) {
+  for (const session of sortedSessions) {
     const studentIds = daySchedule[session.id] ?? session.studentIds;
-    const sessionStudents = data.students
-      .filter((s) => studentIds.includes(s.id))
-      .map((s) => ({ ...s, isActive: true }));
-
-    if (sessionStudents.length === 0) {
-      distribution[session.id] = { studentAssignments: [] };
-      continue;
+    for (const sid of studentIds) {
+      if (!data.students.some((s) => s.id === sid)) continue;
+      if (!studentFirstSession.has(sid)) studentFirstSession.set(sid, session.id);
+      studentLastSession.set(sid, session.id);
     }
-
-    const result = distributeStudents(sessionStudents, vehiclesToUse, data.school);
-    distribution[session.id] = { studentAssignments: result.assignments };
-    totalStudents += result.assignments.length;
   }
 
-  data.dailyDistribution = distribution;
-  saveData(data);
+  const pickupGroups = new Map<string, string[]>();
+  for (const [sid, sessId] of studentFirstSession) {
+    if (!pickupGroups.has(sessId)) pickupGroups.set(sessId, []);
+    pickupGroups.get(sessId)!.push(sid);
+  }
+
+  const dropoffGroups = new Map<string, string[]>();
+  for (const [sid, sessId] of studentLastSession) {
+    if (!dropoffGroups.has(sessId)) dropoffGroups.set(sessId, []);
+    dropoffGroups.get(sessId)!.push(sid);
+  }
+
+  const distribution: DailyDistribution = {};
+
+  for (const [sessId, sids] of pickupGroups) {
+    const session = data.sessions.find((s) => s.id === sessId);
+    if (!session) continue;
+    const studs = data.students.filter((s) => sids.includes(s.id)).map((s) => ({ ...s, isActive: true }));
+    if (studs.length === 0) continue;
+    const result = distributeStudents(studs, vehiclesToUse, data.school);
+    distribution[`pickup_${sessId}`] = {
+      type: "pickup",
+      time: session.time,
+      sessionId: sessId,
+      label: `${session.time} Toplama`,
+      studentAssignments: result.assignments,
+    };
+  }
+
+  for (const [sessId, sids] of dropoffGroups) {
+    const session = data.sessions.find((s) => s.id === sessId);
+    if (!session) continue;
+    const dropoffTime = addMinutesToTime(session.time, data.classDuration);
+    const studs = data.students.filter((s) => sids.includes(s.id)).map((s) => ({ ...s, isActive: true }));
+    if (studs.length === 0) continue;
+    const result = distributeStudents(studs, vehiclesToUse, data.school);
+    distribution[`dropoff_${sessId}`] = {
+      type: "dropoff",
+      time: dropoffTime,
+      sessionId: sessId,
+      label: `${dropoffTime} Dağıtım`,
+      studentAssignments: result.assignments,
+    };
+  }
+
+  const uniqueStudents = new Set(studentFirstSession.keys()).size;
   return {
-    sessionCount: data.sessions.length,
-    totalStudents,
+    distribution,
+    groupCount: Object.keys(distribution).length,
+    uniqueStudents,
     vehicleCount: vehiclesToUse.length,
   };
 }
 
-export function getDailyDistribution(): DailyDistribution | null {
-  return readData().dailyDistribution;
+export function distributeDailyAll(schoolId: string, scope: "day" | "week"): {
+  error?: string;
+  groupCount?: number;
+  uniqueStudents?: number;
+  vehicleCount?: number;
+  daysProcessed?: number;
+  scope?: "day" | "week";
+} {
+  const data = readSchoolData(schoolId);
+  const map = ensureDistributionByDay(data);
+
+  const dayName: Record<string, string> = {
+    "0": "Pazar", "1": "Pazartesi", "2": "Salı", "3": "Çarşamba", "4": "Perşembe", "5": "Cuma", "6": "Cumartesi",
+  };
+
+  if (scope === "day") {
+    const dayKey = String(new Date().getDay());
+    const built = buildDistributionForDay(data, dayKey);
+    if (built.error) return { error: built.error };
+    if (Object.keys(built.distribution).length === 0) {
+      delete map[dayKey];
+    } else {
+      map[dayKey] = built.distribution;
+    }
+    saveSchoolData(schoolId, data);
+    return {
+      scope: "day",
+      groupCount: built.groupCount,
+      uniqueStudents: built.uniqueStudents,
+      vehicleCount: built.vehicleCount,
+    };
+  }
+
+  let daysWithDistribution = 0;
+  let totalGroupCount = 0;
+  for (const d of ALL_WEEK_DAY_KEYS) {
+    const built = buildDistributionForDay(data, d);
+    if (built.error) {
+      return { error: `${dayName[d] ?? d}: ${built.error}` };
+    }
+    if (Object.keys(built.distribution).length === 0) {
+      delete map[d];
+    } else {
+      map[d] = built.distribution;
+      daysWithDistribution++;
+      totalGroupCount += built.groupCount;
+    }
+  }
+
+  saveSchoolData(schoolId, data);
+  return {
+    scope: "week",
+    daysProcessed: daysWithDistribution,
+    groupCount: totalGroupCount,
+  };
 }
 
-export function clearDailyDistribution(): void {
-  const data = readData();
-  data.dailyDistribution = null;
-  saveData(data);
+export function getDailyDistribution(schoolId: string): DailyDistribution | null {
+  return getTodayDistribution(readSchoolData(schoolId));
+}
+
+export function getDistributionDayKeysWithData(schoolId: string): string[] {
+  const data = readSchoolData(schoolId);
+  const map = ensureDistributionByDay(data);
+  return Object.keys(map).filter((k) => Object.keys(map[k]).length > 0);
+}
+
+export function clearDailyDistributionToday(schoolId: string): void {
+  const data = readSchoolData(schoolId);
+  const map = ensureDistributionByDay(data);
+  delete map[String(new Date().getDay())];
+  saveSchoolData(schoolId, data);
+}
+
+export function clearAllDistributions(schoolId: string): void {
+  const data = readSchoolData(schoolId);
+  data.distributionByDay = {};
+  saveSchoolData(schoolId, data);
 }
 
 export type SessionDistributionAssignment = {
@@ -682,15 +1034,17 @@ function normalizeAssignmentsByVehicle(
   return result;
 }
 
-export function updateDailyDistributionSession(
-  sessionId: string,
+export function updateDailyDistributionGroup(
+  schoolId: string,
+  groupId: string,
   assignments: SessionDistributionAssignment[]
 ): { error?: string } {
-  const data = readData();
-  if (!data.dailyDistribution) return { error: "Önce günü dağıtın." };
-  if (!data.sessions.some((s) => s.id === sessionId)) {
-    return { error: "Seans bulunamadı." };
-  }
+  const data = readSchoolData(schoolId);
+  const map = ensureDistributionByDay(data);
+  const dayKey = String(new Date().getDay());
+  const todayDist = map[dayKey];
+  if (!todayDist) return { error: "Önce günü dağıtın." };
+  if (!todayDist[groupId]) return { error: "Grup bulunamadı." };
 
   const vehicleIds = new Set(data.vehicles.map((v) => v.id));
   const seenStudents = new Set<string>();
@@ -700,19 +1054,22 @@ export function updateDailyDistributionSession(
     seenStudents.add(a.studentId);
   }
 
-  data.dailyDistribution[sessionId] = {
+  const group = todayDist[groupId];
+  todayDist[groupId] = {
+    ...group,
     studentAssignments: normalizeAssignmentsByVehicle(assignments),
   };
-  saveData(data);
+  map[dayKey] = todayDist;
+  saveSchoolData(schoolId, data);
   return {};
 }
 
-export function getSessionDistribution(sessionId: string, vehicleId: string): Student[] {
-  const data = readData();
-  const dist = data.dailyDistribution;
-  if (!dist || !dist[sessionId]) return [];
+export function getGroupDistribution(schoolId: string, groupId: string, vehicleId: string): Student[] {
+  const data = readSchoolData(schoolId);
+  const dist = getTodayDistribution(data);
+  if (!dist || !dist[groupId]) return [];
 
-  const assignments = dist[sessionId].studentAssignments
+  const assignments = dist[groupId].studentAssignments
     .filter((a) => a.vehicleId === vehicleId)
     .sort((a, b) => a.order - b.order);
 
@@ -721,15 +1078,13 @@ export function getSessionDistribution(sessionId: string, vehicleId: string): St
     .filter((s): s is Student => !!s);
 }
 
-export function generateRouteLinkForSession(sessionId: string, vehicleId: string): string | null {
-  const data = readData();
-  const session = data.sessions.find((s) => s.id === sessionId);
-  if (!session) return null;
+export function generateRouteLinkForGroup(schoolId: string, groupId: string, vehicleId: string): string | null {
+  const data = readSchoolData(schoolId);
+  const dist = getTodayDistribution(data);
+  if (!dist || !dist[groupId]) return null;
 
-  const dist = data.dailyDistribution;
-  if (!dist || !dist[sessionId]) return null;
-
-  const assignments = dist[sessionId].studentAssignments
+  const group = dist[groupId];
+  const assignments = group.studentAssignments
     .filter((a) => a.vehicleId === vehicleId)
     .sort((a, b) => a.order - b.order);
 
@@ -740,9 +1095,8 @@ export function generateRouteLinkForSession(sessionId: string, vehicleId: string
   if (students.length === 0) return null;
 
   const schoolCoord = `${data.school.lat},${data.school.lng}`;
-  const mode = session.type;
 
-  if (mode === "pickup") {
+  if (group.type === "pickup") {
     const origin = "My+Location";
     const destination = schoolCoord;
     const waypointCoords = students.map((s) => `${s.lat},${s.lng}`).join("|");
@@ -762,10 +1116,12 @@ export function generateRouteLinkForSession(sessionId: string, vehicleId: string
   return url;
 }
 
-// --- Auto Distribution (legacy) ---
+// ---------------------------------------------------------------------------
+// Auto Distribution (legacy)
+// ---------------------------------------------------------------------------
 
-export function autoDistributeStudents(): { error?: string; distributed?: number } {
-  const data = readData();
+export function autoDistributeStudents(schoolId: string): { error?: string; distributed?: number } {
+  const data = readSchoolData(schoolId);
   const active = data.students.filter((s) => s.isActive);
   const vehicles = data.vehicles;
 
@@ -804,14 +1160,16 @@ export function autoDistributeStudents(): { error?: string; distributed?: number
     return 0;
   });
 
-  saveData(data);
+  saveSchoolData(schoolId, data);
   return { distributed: result.assignments.length };
 }
 
-// --- Route ---
+// ---------------------------------------------------------------------------
+// Route
+// ---------------------------------------------------------------------------
 
-export function generateRouteLink(mode: RouteMode, vehicleId?: string): string | null {
-  const data = readData();
+export function generateRouteLink(schoolId: string, mode: RouteMode, vehicleId?: string): string | null {
+  const data = readSchoolData(schoolId);
   let active = data.students.filter((s) => s.isActive);
   if (vehicleId) {
     active = active.filter((s) => s.vehicleId === vehicleId);
@@ -824,25 +1182,18 @@ export function generateRouteLink(mode: RouteMode, vehicleId?: string): string |
     const origin = "My+Location";
     const destination = schoolCoord;
     const waypointCoords = active.map((s) => `${s.lat},${s.lng}`).join("|");
-
     let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-    if (waypointCoords) {
-      url += `&waypoints=${waypointCoords}`;
-    }
+    if (waypointCoords) url += `&waypoints=${waypointCoords}`;
     return url;
   }
 
   const origin = schoolCoord;
   const last = active[active.length - 1];
   const destination = `${last.lat},${last.lng}`;
-
   const waypointCoords = active.length > 1
     ? active.slice(0, -1).map((s) => `${s.lat},${s.lng}`).join("|")
     : "";
-
   let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-  if (waypointCoords) {
-    url += `&waypoints=${waypointCoords}`;
-  }
+  if (waypointCoords) url += `&waypoints=${waypointCoords}`;
   return url;
 }

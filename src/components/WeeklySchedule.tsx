@@ -10,6 +10,8 @@ const DAY_LABELS: { [key: string]: string } = {
   "3": "Çarşamba",
   "4": "Perşembe",
   "5": "Cuma",
+  "6": "Cumartesi",
+  "0": "Pazar",
 };
 
 const DAY_SHORT: { [key: string]: string } = {
@@ -18,17 +20,20 @@ const DAY_SHORT: { [key: string]: string } = {
   "3": "Çar",
   "4": "Per",
   "5": "Cum",
+  "6": "Cmt",
+  "0": "Paz",
 };
 
-const DAYS = ["1", "2", "3", "4", "5"];
+const DAYS = ["1", "2", "3", "4", "5", "6", "0"];
 
 interface Props {
+  schoolId: string;
   sessions: Session[];
   students: Student[];
   onRefresh: () => void;
 }
 
-export default function WeeklySchedule({ sessions, students, onRefresh }: Props) {
+export default function WeeklySchedule({ schoolId, sessions, students, onRefresh }: Props) {
   const todayIndex = new Date().getDay();
   const defaultDay = todayIndex >= 1 && todayIndex <= 5 ? String(todayIndex) : "1";
 
@@ -40,9 +45,9 @@ export default function WeeklySchedule({ sessions, students, onRefresh }: Props)
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const loadSchedule = useCallback(async () => {
-    const data = await fetchWeeklySchedule();
+    const data = await fetchWeeklySchedule(schoolId);
     setSchedule(data);
-  }, []);
+  }, [schoolId]);
 
   useEffect(() => {
     loadSchedule();
@@ -75,7 +80,7 @@ export default function WeeklySchedule({ sessions, students, onRefresh }: Props)
   async function handleSave() {
     if (!editingSession) return;
     setSaving(true);
-    await updateWeeklyScheduleDay(selectedDay, editingSession, editStudentIds);
+    await updateWeeklyScheduleDay(schoolId, selectedDay, editingSession, editStudentIds);
     await loadSchedule();
     setEditingSession(null);
     setEditStudentIds([]);
@@ -88,7 +93,7 @@ export default function WeeklySchedule({ sessions, students, onRefresh }: Props)
     if (!editingSession) return;
     setSaving(true);
     for (const day of DAYS) {
-      await updateWeeklyScheduleDay(day, editingSession, editStudentIds);
+      await updateWeeklyScheduleDay(schoolId, day, editingSession, editStudentIds);
     }
     await loadSchedule();
     setEditingSession(null);
@@ -163,15 +168,13 @@ export default function WeeklySchedule({ sessions, students, onRefresh }: Props)
               >
                 <div className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                      session.type === "pickup" ? "bg-green-500/10 text-green-400" : "bg-blue-500/10 text-blue-400"
-                    }`}>
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-accent/10 text-accent">
                       <span className="text-xs font-bold">{session.time.slice(0, 5)}</span>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-white">{session.label}</p>
                       <p className="text-xs text-gray-500">
-                        {session.type === "pickup" ? "→ Okula" : "→ Evlere"} • {sessionStudents.length} öğrenci
+                        {sessionStudents.length} öğrenci
                       </p>
                     </div>
                   </div>

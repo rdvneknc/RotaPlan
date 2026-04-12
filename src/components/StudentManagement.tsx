@@ -7,13 +7,14 @@ import AddStudentForm from "./AddStudentForm";
 import EditStudentModal from "./EditStudentModal";
 
 interface Props {
+  schoolId: string;
   students: Student[];
   vehicles: Vehicle[];
   sessions: Session[];
   onRefresh: () => void;
 }
 
-export default function StudentManagement({ students, vehicles, sessions, onRefresh }: Props) {
+export default function StudentManagement({ schoolId, students, vehicles, sessions, onRefresh }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -29,7 +30,7 @@ export default function StudentManagement({ students, vehicles, sessions, onRefr
     setLoadingId(id);
     const formData = new FormData();
     formData.set("id", id);
-    await removeStudent(formData);
+    await removeStudent(schoolId, formData);
     onRefresh();
     setLoadingId(null);
   }
@@ -63,6 +64,7 @@ export default function StudentManagement({ students, vehicles, sessions, onRefr
       {showForm && (
         <div className="mb-5 pb-5 border-b border-dark-500">
           <AddStudentForm
+            schoolId={schoolId}
             onDone={() => {
               setShowForm(false);
               onRefresh();
@@ -145,9 +147,8 @@ export default function StudentManagement({ students, vehicles, sessions, onRefr
 
       {editingStudent && (
         <EditStudentModal
+          schoolId={schoolId}
           student={editingStudent}
-          vehicles={vehicles}
-          sessions={sessions}
           onClose={() => setEditingStudent(null)}
           onDone={() => {
             setEditingStudent(null);

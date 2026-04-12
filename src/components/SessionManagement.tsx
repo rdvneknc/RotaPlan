@@ -1,27 +1,32 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Session } from "@/lib/types";
-import { createSession, editSession, removeSession } from "@/lib/actions";
+import { createSession, editSession, removeSession, fetchClassDuration, updateClassDuration } from "@/lib/actions";
 
 interface Props {
+  schoolId: string;
   sessions: Session[];
   onRefresh: () => void;
 }
 
-export default function SessionManagement({ sessions, onRefresh }: Props) {
+export default function SessionManagement({ schoolId, sessions, onRefresh }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [label, setLabel] = useState("");
   const [time, setTime] = useState("");
-  const [type, setType] = useState<"pickup" | "dropoff">("pickup");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [classDuration, setClassDuration] = useState(40);
+  const [durationSaving, setDurationSaving] = useState(false);
+
+  useEffect(() => {
+    fetchClassDuration(schoolId).then(setClassDuration);
+  }, []);
 
   function resetForm() {
     setLabel("");
     setTime("");
-    setType("pickup");
     setShowForm(false);
     setEditingId(null);
     setError("");
@@ -30,7 +35,6 @@ export default function SessionManagement({ sessions, onRefresh }: Props) {
   function startEdit(session: Session) {
     setLabel(session.label);
     setTime(session.time);
-    setType(session.type);
     setEditingId(session.id);
     setShowForm(true);
   }
@@ -45,14 +49,14 @@ export default function SessionManagement({ sessions, onRefresh }: Props) {
     setError("");
 
     if (editingId) {
-      const result = await editSession(editingId, { label: label.trim(), time: time.trim(), type });
+      const result = await editSession(schoolId, editingId, { label: label.trim(), time: time.trim() });
       if (result.error) {
         setError(result.error);
         setLoading(false);
         return;
       }
     } else {
-      await createSession({ label: label.trim(), time: time.trim(), type, studentIds: [] });
+      await createSession(schoolId, { label: label.trim(), time: time.trim(), studentIds: [] });
     }
 
     resetForm();
@@ -61,22 +65,50 @@ export default function SessionManagement({ sessions, onRefresh }: Props) {
   }
 
   async function handleDelete(id: string) {
-    await removeSession(id);
+    await removeSession(schoolId, id);
     onRefresh();
+  }
+
+  async function handleDurationChange(val: number) {
+    const clamped = Math.max(1, Math.min(120, val));
+    setClassDuration(clamped);
+    setDurationSaving(true);
+    await updateClassDuration(schoolId, clamped);
+    setDurationSaving(false);
   }
 
   return (
     <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-semibold text-white">Seanslar</h2>
+        <h2 className="text-base font-semibold text-white">Ders Saatleri</h2>
         {!showForm && (
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
             className="px-4 py-2 text-sm font-medium text-dark-900 bg-accent hover:bg-accent-hover rounded-xl transition"
           >
-            + Seans Ekle
+            + Ders Saati Ekle
           </button>
         )}
+      </div>
+
+      {/* Ders süresi ayarı */}
+      <div className="mb-5 p-3 bg-dark-700 rounded-xl border border-dark-400 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-gray-300">Ders Süresi</p>
+          <p className="text-xs text-gray-600">Çıkış saati = ders başlangıcı + bu süre</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            value={classDuration}
+            onChange={(e) => handleDurationChange(parseInt(e.target.value) || 40)}
+            min={1}
+            max={120}
+            className="w-16 rounded-lg border border-dark-400 bg-dark-600 px-2 py-1.5 text-sm text-white text-center focus:border-accent focus:ring-1 focus:ring-accent outline-none"
+          />
+          <span className="text-sm text-gray-400">dk</span>
+          {durationSaving && <span className="text-xs text-gray-600">...</span>}
+        </div>
       </div>
 
       {showForm && (
@@ -88,12 +120,12 @@ export default function SessionManagement({ sessions, onRefresh }: Props) {
                 type="text"
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
-                placeholder="örn. 09:00 Giriş"
+                placeholder="örn. 09:00 Dersi"
                 className="w-full rounded-xl border border-dark-400 bg-dark-600 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-1">Saat</label>
+              <label className="block text-sm font-medium text-gray-400 mb-1">Ders Başlangıç Saati</label>
               <input
                 type="time"
                 value={time}
@@ -103,31 +135,7 @@ export default function SessionManagement({ sessions, onRefresh }: Props) {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">Yön</label>
-            <div className="flex bg-dark-600 rounded-xl p-1 gap-1">
-              <button
-                type="button"
-                onClick={() => setType("pickup")}
-                className={`flex-1 py-2 text-sm font-medium rounded-lg transition ${
-                  type === "pickup" ? "bg-accent text-dark-900" : "text-gray-400 hover:text-white"
-                }`}
-              >
-                Evlerden Okula
-              </button>
-              <button
-                type="button"
-                onClick={() => setType("dropoff")}
-                className={`flex-1 py-2 text-sm font-medium rounded-lg transition ${
-                  type === "dropoff" ? "bg-accent text-dark-900" : "text-gray-400 hover:text-white"
-                }`}
-              >
-                Okuldan Evlere
-              </button>
-            </div>
-          </div>
-
-          <p className="text-xs text-gray-600">Öğrencileri &quot;Program&quot; sayfasından seanslara atayabilirsiniz.</p>
+          <p className="text-xs text-gray-600">Öğrencileri &quot;Program&quot; sayfasından ders saatlerine atayabilirsiniz.</p>
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
@@ -152,7 +160,7 @@ export default function SessionManagement({ sessions, onRefresh }: Props) {
 
       {sessions.length === 0 ? (
         <p className="text-sm text-gray-500 text-center py-8">
-          Henüz seans tanımlanmadı. Saatlerinize göre seanslar ekleyin.
+          Henüz ders saati tanımlanmadı. Saatlerinize göre ders saatleri ekleyin.
         </p>
       ) : (
         <div className="space-y-2">
@@ -162,23 +170,15 @@ export default function SessionManagement({ sessions, onRefresh }: Props) {
               className="flex items-center justify-between bg-dark-700 border border-dark-500 rounded-xl p-4"
             >
               <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                  session.type === "pickup" ? "bg-green-500/10 text-green-400" : "bg-blue-500/10 text-blue-400"
-                }`}>
-                  {session.type === "pickup" ? (
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
-                  )}
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-accent/10 text-accent">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">{session.label}</p>
                   <p className="text-xs text-gray-500">
-                    {session.type === "pickup" ? "Evlerden Okula" : "Okuldan Evlere"} • {session.studentIds.length} öğrenci
+                    Başlangıç: {session.time} • {session.studentIds.length} öğrenci
                   </p>
                 </div>
               </div>

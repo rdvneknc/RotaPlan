@@ -7,19 +7,10 @@ import {
   updateWeeklyScheduleDay,
   fetchStudents,
   fetchSessions,
+  pushWeeklyProgramToGoogleSheets,
+  pullWeeklyProgramFromGoogleSheets,
 } from "@/lib/actions";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-
-const DAY_LABELS: { [key: string]: string } = {
-  "1": "Pazartesi",
-  "2": "Salı",
-  "3": "Çarşamba",
-  "4": "Perşembe",
-  "5": "Cuma",
-};
-
-const DAYS = ["1", "2", "3", "4", "5"];
+import { DAY_LABELS, DAYS } from "@/lib/weekly-program-shared";
 
 function StudentSearchDropdown({
   available,
@@ -95,32 +86,42 @@ function StudentSearchDropdown({
 }
 
 interface Props {
+  schoolId: string;
   initialSessions: Session[];
   initialStudents: Student[];
+  googleSheetId?: string | null;
+  googleSheetsConfigured?: boolean;
 }
 
-export default function ProgramEditor({ initialSessions, initialStudents }: Props) {
+export default function ProgramEditor({
+  schoolId,
+  initialSessions,
+  initialStudents,
+  googleSheetId = null,
+  googleSheetsConfigured = false,
+}: Props) {
   const [sessions, setSessions] = useState<Session[]>(initialSessions);
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [schedule, setSchedule] = useState<{ [day: string]: { [sessionId: string]: string[] } }>({});
   const [selectedDay, setSelectedDay] = useState(() => {
     const today = new Date().getDay();
-    return today >= 1 && today <= 5 ? String(today) : "1";
+    return String(today);
   });
   const [saving, setSaving] = useState(false);
+  const [sheetsBusy, setSheetsBusy] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const loadData = useCallback(async () => {
     const [sched, studs, sess] = await Promise.all([
-      fetchWeeklySchedule(),
-      fetchStudents(),
-      fetchSessions(),
+      fetchWeeklySchedule(schoolId),
+      fetchStudents(schoolId),
+      fetchSessions(schoolId),
     ]);
     setSchedule(sched);
     setStudents(studs);
     setSessions(sess);
-  }, []);
+  }, [schoolId]);
 
   useEffect(() => {
     loadData();
@@ -172,7 +173,7 @@ export default function ProgramEditor({ initialSessions, initialStudents }: Prop
     const dayData = schedule[selectedDay] || {};
     for (const session of sessions) {
       const studentIds = dayData[session.id] ?? session.studentIds;
-      await updateWeeklyScheduleDay(selectedDay, session.id, studentIds);
+      await updateWeeklyScheduleDay(schoolId, selectedDay, session.id, studentIds);
     }
     setHasChanges(false);
     setSaving(false);
@@ -185,7 +186,7 @@ export default function ProgramEditor({ initialSessions, initialStudents }: Prop
     for (const day of DAYS) {
       for (const session of sessions) {
         const studentIds = dayData[session.id] ?? session.studentIds;
-        await updateWeeklyScheduleDay(day, session.id, studentIds);
+        await updateWeeklyScheduleDay(schoolId, day, session.id, studentIds);
       }
     }
     await loadData();
@@ -210,7 +211,7 @@ export default function ProgramEditor({ initialSessions, initialStudents }: Prop
     setSaving(true);
     for (const day of DAYS) {
       for (const session of sessions) {
-        await updateWeeklyScheduleDay(day, session.id, []);
+        await updateWeeklyScheduleDay(schoolId, day, session.id, []);
       }
     }
     await loadData();
@@ -219,140 +220,39 @@ export default function ProgramEditor({ initialSessions, initialStudents }: Prop
     setMsg({ type: "success", text: "Tüm program temizlendi." });
   }
 
-  async function loadTurkishFont(doc: jsPDF) {
-    const [regularRes, boldRes] = await Promise.all([
-      fetch("/fonts/Roboto-Regular.ttf"),
-      fetch("/fonts/Roboto-Bold.ttf"),
-    ]);
-    const [regularBuf, boldBuf] = await Promise.all([
-      regularRes.arrayBuffer(),
-      boldRes.arrayBuffer(),
-    ]);
-
-    const toBase64 = (buf: ArrayBuffer) => {
-      const bytes = new Uint8Array(buf);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-      return btoa(binary);
-    };
-
-    doc.addFileToVFS("Roboto-Regular.ttf", toBase64(regularBuf));
-    doc.addFont("Roboto-Regular.ttf", "Roboto", "normal");
-    doc.addFileToVFS("Roboto-Bold.ttf", toBase64(boldBuf));
-    doc.addFont("Roboto-Bold.ttf", "Roboto", "bold");
-    doc.setFont("Roboto");
-  }
-
-  function renderDayToPdf(doc: jsPDF, day: string, startY: number): number {
-    const dayLabel = DAY_LABELS[day];
-    const today = new Date();
-    const currentDayOfWeek = today.getDay();
-    const targetDayOfWeek = parseInt(day);
-    const diff = targetDayOfWeek - currentDayOfWeek;
-    const targetDate = new Date(today);
-    targetDate.setDate(today.getDate() + diff);
-    const dateStr = targetDate.toLocaleDateString("tr-TR", { day: "2-digit", month: "long", year: "numeric" });
-
-    doc.setFont("Roboto", "bold");
-    doc.setFontSize(16);
-    doc.setTextColor(0);
-    doc.text(`Servis Programi - ${dayLabel}`, 14, startY);
-    doc.setFont("Roboto", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(120);
-    doc.text(dateStr, 14, startY + 6);
-    doc.setTextColor(0);
-
-    let y = startY + 13;
-
-    for (const session of sessions) {
-      const ids = getStudentsForSession(day, session.id);
-      if (ids.length === 0) continue;
-
-      const typeLabel = session.type === "pickup" ? "GIRIS" : "CIKIS";
-      const headerColor: [number, number, number] = session.type === "pickup" ? [34, 197, 94] : [59, 130, 246];
-
-      const rows = ids.map((id, idx) => {
-        const s = getStudent(id);
-        if (!s) return [String(idx + 1), "?", "", "", "", "", ""];
-        return [
-          String(idx + 1),
-          s.name,
-          s.label,
-          s.contact1Name || "-",
-          s.contact1Phone || "-",
-          s.contact2Name || "-",
-          s.contact2Phone || "-",
-        ];
-      });
-
-      autoTable(doc, {
-        startY: y,
-        head: [[
-          { content: `${session.time} ${typeLabel} - ${session.label}  (${ids.length} ogrenci)`, colSpan: 7, styles: { fillColor: headerColor, textColor: 255, fontStyle: "bold", fontSize: 9, font: "Roboto" } },
-        ]],
-        body: [],
-        theme: "grid",
-        margin: { left: 14, right: 14 },
-        styles: { font: "Roboto" },
-      });
-
-      const afterHeader = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
-
-      autoTable(doc, {
-        startY: afterHeader,
-        head: [["#", "Ad-Soyad", "Konum", "Irtibat 1", "Telefon 1", "Irtibat 2", "Telefon 2"]],
-        body: rows,
-        theme: "grid",
-        styles: { font: "Roboto", fontSize: 8 },
-        headStyles: { fillColor: [55, 55, 65], textColor: 200, fontSize: 8, font: "Roboto", fontStyle: "bold" },
-        bodyStyles: { fontSize: 8, textColor: 40, font: "Roboto" },
-        columnStyles: {
-          0: { cellWidth: 8, halign: "center" },
-          1: { cellWidth: 45 },
-          2: { cellWidth: 40 },
-          3: { cellWidth: 35 },
-          4: { cellWidth: 30 },
-          5: { cellWidth: 35 },
-          6: { cellWidth: 30 },
-        },
-        margin: { left: 14, right: 14 },
-      });
-
-      y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
-
-      if (y > 180) {
-        doc.addPage();
-        y = 15;
-      }
+  async function handlePushSheets() {
+    setSheetsBusy(true);
+    setMsg(null);
+    const res = await pushWeeklyProgramToGoogleSheets(schoolId);
+    setSheetsBusy(false);
+    if ("error" in res && res.error) {
+      setMsg({ type: "error", text: res.error });
+      return;
     }
-
-    return y;
+    setMsg({ type: "success", text: "Program Google Sheets’e yazıldı (Haftalık Program sekmesi)." });
   }
 
-  async function exportDayPdf(day: string) {
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    await loadTurkishFont(doc);
-    renderDayToPdf(doc, day, 15);
-    doc.save(`program_${DAY_LABELS[day].toLowerCase()}.pdf`);
-  }
-
-  async function exportFullWeekPdf() {
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    await loadTurkishFont(doc);
-    let isFirstPage = true;
-
-    for (const day of DAYS) {
-      const hasSessions = sessions.some((s) => getStudentsForSession(day, s.id).length > 0);
-      if (!hasSessions) continue;
-
-      if (!isFirstPage) doc.addPage();
-      isFirstPage = false;
-
-      renderDayToPdf(doc, day, 15);
+  async function handlePullSheets() {
+    if (!confirm("Sheets’teki tablo ile bu okulun haftalık programı tamamen güncellenecek. Devam edilsin mi?")) return;
+    setSheetsBusy(true);
+    setMsg(null);
+    const res = await pullWeeklyProgramFromGoogleSheets(schoolId);
+    setSheetsBusy(false);
+    if ("error" in res && res.error) {
+      const extra =
+        "warnings" in res && res.warnings?.length
+          ? ` — ${res.warnings.slice(0, 8).join(" ")}`
+          : "";
+      setMsg({ type: "error", text: res.error + extra });
+      return;
     }
-
-    doc.save("program_haftalik.pdf");
+    await loadData();
+    setHasChanges(false);
+    const w =
+      "warnings" in res && res.warnings && res.warnings.length > 0
+        ? ` ${res.warnings.length} uyarı (eşleşmeyen isim).`
+        : "";
+    setMsg({ type: "success", text: `Sheets’ten program alındı.${w}` });
   }
 
   function getAvailableStudents(sessionId: string): Student[] {
@@ -369,26 +269,41 @@ export default function ProgramEditor({ initialSessions, initialStudents }: Prop
         <div>
           <h1 className="text-2xl font-bold text-white">Haftalık Program</h1>
           <p className="text-sm text-gray-500 mt-1">Her gün için seansları ve öğrencileri düzenleyin</p>
+          {!googleSheetId && (
+            <p className="text-xs text-gray-600 mt-2">
+              Google Sheets: Admin → Okul sekmesinde dosya linkini kaydedin.
+            </p>
+          )}
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
-          <button
-            onClick={() => exportDayPdf(selectedDay)}
-            className="px-4 py-2.5 text-sm font-medium text-gray-400 hover:text-white bg-dark-800 hover:bg-dark-700 border border-dark-500 rounded-xl transition flex items-center gap-1.5"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            Günü İndir
-          </button>
-          <button
-            onClick={exportFullWeekPdf}
-            className="px-4 py-2.5 text-sm font-medium text-gray-400 hover:text-white bg-dark-800 hover:bg-dark-700 border border-dark-500 rounded-xl transition flex items-center gap-1.5"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            Haftayı İndir
-          </button>
+          {googleSheetId ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void handlePushSheets()}
+                disabled={saving || sheetsBusy || !googleSheetsConfigured}
+                title={!googleSheetsConfigured ? "Sunucuda GOOGLE_SERVICE_ACCOUNT_JSON gerekli" : undefined}
+                className="px-4 py-2.5 text-sm font-medium text-sky-200/90 bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/30 rounded-xl transition flex items-center gap-1.5 disabled:opacity-40"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 8v8m0 0l-3-3m3 3l3-3M12 3v3" />
+                </svg>
+                {sheetsBusy ? "Sheets…" : "Sheets'e gönder"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handlePullSheets()}
+                disabled={saving || sheetsBusy || !googleSheetsConfigured}
+                title={!googleSheetsConfigured ? "Sunucuda GOOGLE_SERVICE_ACCOUNT_JSON gerekli" : undefined}
+                className="px-4 py-2.5 text-sm font-medium text-sky-200/90 bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/30 rounded-xl transition flex items-center gap-1.5 disabled:opacity-40"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                {sheetsBusy ? "Sheets…" : "Sheets'ten al"}
+              </button>
+            </>
+          ) : null}
           <button
             onClick={clearDay}
             disabled={saving}
@@ -466,25 +381,15 @@ export default function ProgramEditor({ initialSessions, initialStudents }: Prop
           {sessions.map((session) => {
             const sessionStudents = getStudentsForSession(selectedDay, session.id);
             const available = getAvailableStudents(session.id);
-            const isPickup = session.type === "pickup";
 
             return (
               <div key={session.id} className="bg-dark-800 rounded-2xl border border-dark-500 overflow-hidden">
                 {/* Session header */}
-                <div className={`px-5 py-3 flex items-center justify-between border-b ${
-                  isPickup
-                    ? "bg-green-500/5 border-green-500/10"
-                    : "bg-blue-500/5 border-blue-500/10"
-                }`}>
+                <div className="px-5 py-3 flex items-center justify-between border-b bg-accent/5 border-accent/10">
                   <div className="flex items-center gap-3">
-                    <div className={`px-3 py-1 rounded-lg text-sm font-bold ${
-                      isPickup ? "bg-green-500/15 text-green-400" : "bg-blue-500/15 text-blue-400"
-                    }`}>
+                    <div className="px-3 py-1 rounded-lg text-sm font-bold bg-accent/15 text-accent">
                       {session.time}
                     </div>
-                    <span className={`text-sm font-medium ${isPickup ? "text-green-400" : "text-blue-400"}`}>
-                      {isPickup ? "GİRİŞ" : "ÇIKIŞ"}
-                    </span>
                     <span className="text-xs text-gray-500">
                       {session.label} • {sessionStudents.length} öğrenci
                     </span>

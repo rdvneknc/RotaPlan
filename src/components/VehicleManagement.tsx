@@ -5,11 +5,12 @@ import { Vehicle } from "@/lib/types";
 import { createVehicle, editVehicle, removeVehicle } from "@/lib/actions";
 
 interface Props {
+  schoolId: string;
   vehicles: Vehicle[];
   onRefresh: () => void;
 }
 
-export default function VehicleManagement({ vehicles, onRefresh }: Props) {
+export default function VehicleManagement({ schoolId, vehicles, onRefresh }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [loading, setLoading] = useState(false);
@@ -21,7 +22,7 @@ export default function VehicleManagement({ vehicles, onRefresh }: Props) {
     setLoading(true);
     setError("");
     const formData = new FormData(e.currentTarget);
-    const result = await createVehicle(formData);
+    const result = await createVehicle(schoolId, formData);
     if (result.error) {
       setError(result.error);
       setLoading(false);
@@ -39,7 +40,7 @@ export default function VehicleManagement({ vehicles, onRefresh }: Props) {
     setError("");
     const formData = new FormData(e.currentTarget);
     formData.set("id", editingVehicle.id);
-    const result = await editVehicle(formData);
+    const result = await editVehicle(schoolId, formData);
     if (result.error) {
       setError(result.error);
       setLoading(false);
@@ -54,19 +55,23 @@ export default function VehicleManagement({ vehicles, onRefresh }: Props) {
     if (!confirm(`${name} adlı aracı silmek istediğinize emin misiniz? Bu araca atanan öğrenciler atanmamış duruma geçecektir.`)) return;
     const formData = new FormData();
     formData.set("id", id);
-    await removeVehicle(formData);
+    const res = await removeVehicle(schoolId, formData);
+    if (res && "error" in res && res.error) {
+      setError(res.error);
+      return;
+    }
     onRefresh();
   }
 
   function copyLink(slug: string) {
-    const url = `${window.location.origin}/sofor/${slug}`;
+    const url = `${window.location.origin}/sofor/${schoolId}/${slug}`;
     navigator.clipboard.writeText(url);
     setCopied(slug);
     setTimeout(() => setCopied(null), 2000);
   }
 
   function getDriverUrl(slug: string) {
-    return `${typeof window !== "undefined" ? window.location.origin : ""}/sofor/${slug}`;
+    return `${typeof window !== "undefined" ? window.location.origin : ""}/sofor/${schoolId}/${slug}`;
   }
 
   return (
@@ -110,7 +115,20 @@ export default function VehicleManagement({ vehicles, onRefresh }: Props) {
                 className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-1.5">Şoför giriş — kullanıcı adı</label>
+              <input
+                name="loginUsername"
+                type="text"
+                required
+                autoComplete="off"
+                defaultValue={editingVehicle?.loginUsername || ""}
+                placeholder="örn. ahmet.sofor"
+                className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
+              />
+              <p className="text-xs text-gray-600 mt-1">3–40 karakter; küçük harf, rakam, . _ - (tüm okullarda benzersiz)</p>
+            </div>
+                       <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-400 mb-1.5">Plaka</label>
                 <input
@@ -176,9 +194,16 @@ export default function VehicleManagement({ vehicles, onRefresh }: Props) {
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <p className="text-base font-medium text-white">{vehicle.driverName}</p>
                       <span className="text-xs bg-dark-500 text-gray-300 px-2 py-0.5 rounded-md font-mono">{vehicle.plate}</span>
+                      {vehicle.loginUsername ? (
+                        <span className="text-xs bg-sky-500/15 text-sky-300 px-2 py-0.5 rounded-md font-mono">
+                          @{vehicle.loginUsername}
+                        </span>
+                      ) : (
+                        <span className="text-xs bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-md">Giriş tanımlı değil</span>
+                      )}
                     </div>
                     <p className="text-sm text-gray-500">Kapasite: {vehicle.capacity} kişi</p>
                     <div className="mt-2 flex items-center gap-2">

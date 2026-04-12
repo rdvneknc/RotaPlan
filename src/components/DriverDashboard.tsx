@@ -1,22 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Student, Vehicle, Session } from "@/lib/types";
-import { fetchDailyDistribution, fetchSessionDistribution, fetchVehicleWorkingToday, getRouteLinkForSession } from "@/lib/actions";
+import { Student, Vehicle, DailyDistribution, DistributionGroup } from "@/lib/types";
+import { fetchDailyDistribution, fetchGroupDistribution, fetchVehicleWorkingToday, getRouteLinkForGroup } from "@/lib/actions";
 
-type DailyDist = {
-  [sessionId: string]: {
-    studentAssignments: { studentId: string; vehicleId: string; order: number }[];
-  };
-};
-
-/** Görünür sekmede ~1 dağıtım isteği/dk; liste, dağıtım güncellenince veya sekme odaklanınca yenilenir. */
 const DISTRIBUTION_POLL_MS = 60_000;
 
-/** "Geçti" seans stilini denemek için [saat, dakika] verin; normal kullanımda null. */
 const DEMO_FIXED_TIME_HM: [number, number] | null = null;
 
-function getClockNowForSessionUi(nowTick: number): Date {
+function getClockNow(nowTick: number): Date {
   if (DEMO_FIXED_TIME_HM) {
     const d = new Date();
     d.setHours(DEMO_FIXED_TIME_HM[0], DEMO_FIXED_TIME_HM[1], 0, 0);
@@ -25,8 +17,7 @@ function getClockNowForSessionUi(nowTick: number): Date {
   return new Date(nowTick);
 }
 
-/** Seans saati (örn. 09:40) geçti mi — dakika çözünürlüğü, yerel saat. */
-function sessionTimeToMinutes(timeStr: string): number | null {
+function groupTimeToMinutes(timeStr: string): number | null {
   const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
   const h = parseInt(m[1], 10);
@@ -35,110 +26,111 @@ function sessionTimeToMinutes(timeStr: string): number | null {
   return h * 60 + min;
 }
 
-function isSessionTimePast(session: Session, now: Date): boolean {
-  const t = sessionTimeToMinutes(session.time);
+function isGroupTimePast(group: DistributionGroup, now: Date): boolean {
+  const t = groupTimeToMinutes(group.time);
   if (t === null) return false;
   const cur = now.getHours() * 60 + now.getMinutes();
   return cur > t;
 }
 
+function getSortedGroups(dist: DailyDistribution): { groupId: string; group: DistributionGroup }[] {
+  return Object.entries(dist)
+    .map(([groupId, group]) => ({ groupId, group }))
+    .sort((a, b) => {
+      const ta = a.group.time.localeCompare(b.group.time);
+      if (ta !== 0) return ta;
+      return a.group.type === "pickup" ? -1 : 1;
+    });
+}
+
 interface Props {
+  schoolId: string;
   vehicle: Vehicle;
-  sessions: Session[];
-  initialDistribution: DailyDist | null;
+  initialDistribution: DailyDistribution | null;
   initialWorkingToday: boolean;
 }
 
-export default function DriverDashboard({ vehicle, sessions, initialDistribution, initialWorkingToday }: Props) {
-  const [selectedSessionId, setSelectedSessionId] = useState<string>("");
-  const [sessionStudents, setSessionStudents] = useState<Student[]>([]);
+export default function DriverDashboard({ schoolId, vehicle, initialDistribution, initialWorkingToday }: Props) {
+  const [selectedGroupId, setSelectedGroupId] = useState<string>("");
+  const [groupStudents, setGroupStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(false);
   const [routeLink, setRouteLink] = useState<string | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
-  const [distribution, setDistribution] = useState<DailyDist | null>(initialDistribution);
+  const [distribution, setDistribution] = useState<DailyDistribution | null>(initialDistribution);
   const [workingToday, setWorkingToday] = useState(initialWorkingToday);
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const selectedSessionRef = useRef(selectedSessionId);
-  selectedSessionRef.current = selectedSessionId;
+  const selectedGroupRef = useRef(selectedGroupId);
+  selectedGroupRef.current = selectedGroupId;
 
-  const selectedSession = sessions.find((s) => s.id === selectedSessionId) || null;
+  const selectedGroup = distribution?.[selectedGroupId] ?? null;
 
   useEffect(() => {
     if (DEMO_FIXED_TIME_HM) return;
-    function tick() {
-      setNowTick(Date.now());
-    }
+    function tick() { setNowTick(Date.now()); }
     const id = setInterval(tick, 60_000);
     function onVisible() {
       if (document.visibilityState === "visible") tick();
     }
     document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, []);
 
-  function getSessionStudentCount(sessionId: string): number {
-    if (!distribution || !distribution[sessionId]) return 0;
-    return distribution[sessionId].studentAssignments
+  function getGroupStudentCount(groupId: string): number {
+    if (!distribution || !distribution[groupId]) return 0;
+    return distribution[groupId].studentAssignments
       .filter((a) => a.vehicleId === vehicle.id).length;
   }
 
-  const totalStudentsToday = sessions.reduce((sum, s) => sum + getSessionStudentCount(s.id), 0);
+  const totalStudentsToday = distribution
+    ? Object.keys(distribution).reduce((sum, gid) => sum + getGroupStudentCount(gid), 0)
+    : 0;
 
-  const loadSessionStudents = useCallback(async (sessionId: string) => {
-    if (!sessionId) {
-      setSessionStudents([]);
-      return;
-    }
+  const loadGroupStudents = useCallback(async (gid: string) => {
+    if (!gid) { setGroupStudents([]); return; }
     setLoading(true);
-    const data = await fetchSessionDistribution(sessionId, vehicle.id);
-    setSessionStudents(data);
+    const data = await fetchGroupDistribution(schoolId, gid, vehicle.id);
+    setGroupStudents(data);
     setLoading(false);
-  }, [vehicle.id]);
+  }, [schoolId, vehicle.id]);
 
   const syncDistribution = useCallback(async () => {
     const [next, working] = await Promise.all([
-      fetchDailyDistribution(),
-      fetchVehicleWorkingToday(vehicle.id),
+      fetchDailyDistribution(schoolId, vehicle.id),
+      fetchVehicleWorkingToday(schoolId, vehicle.id),
     ]);
     setWorkingToday(working);
     setDistribution(next);
     if (next == null) {
-      setSelectedSessionId("");
-      setSessionStudents([]);
+      setSelectedGroupId("");
+      setGroupStudents([]);
       setRouteLink(null);
     } else {
-      const sid = selectedSessionRef.current;
-      if (sid) void loadSessionStudents(sid);
+      const gid = selectedGroupRef.current;
+      if (gid) void loadGroupStudents(gid);
     }
-  }, [vehicle.id, loadSessionStudents]);
+  }, [schoolId, vehicle.id, loadGroupStudents]);
 
   useEffect(() => {
-    if (selectedSessionId) {
-      loadSessionStudents(selectedSessionId);
+    if (selectedGroupId) {
+      loadGroupStudents(selectedGroupId);
       setRouteLink(null);
     } else {
-      setSessionStudents([]);
+      setGroupStudents([]);
       setRouteLink(null);
     }
-  }, [selectedSessionId, loadSessionStudents]);
+  }, [selectedGroupId, loadGroupStudents]);
 
   useEffect(() => {
     void syncDistribution();
     const distInterval = setInterval(() => {
       if (document.visibilityState === "visible") void syncDistribution();
     }, DISTRIBUTION_POLL_MS);
-
     function onBecameVisible() {
       if (document.visibilityState !== "visible") return;
       void syncDistribution();
     }
-
     document.addEventListener("visibilitychange", onBecameVisible);
     window.addEventListener("focus", onBecameVisible);
-
     return () => {
       clearInterval(distInterval);
       document.removeEventListener("visibilitychange", onBecameVisible);
@@ -147,9 +139,9 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
   }, [syncDistribution]);
 
   async function handleGenerateRoute() {
-    if (!selectedSessionId) return;
+    if (!selectedGroupId) return;
     setRouteLoading(true);
-    const link = await getRouteLinkForSession(selectedSessionId, vehicle.id);
+    const link = await getRouteLinkForGroup(schoolId, selectedGroupId, vehicle.id);
     if (link) {
       setRouteLink(link);
       const w = window.open(link, "_blank");
@@ -185,7 +177,7 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
         <div className="bg-dark-800 rounded-2xl border border-amber-600/30 p-6 text-center">
           <p className="text-base font-medium text-amber-300 mb-2">Bugün bu araç nöbette değil</p>
           <p className="text-sm text-gray-500">
-            Admin panelinde bugünün çalışan şoför listesinde bu araç işaretli değil. Liste güncellenirse sayfa bir süre sonra yenilenir veya sayfayı yenileyin.
+            Admin panelinde bugünün çalışan şoför listesinde bu araç işaretli değil.
           </p>
         </div>
       ) : !hasDistribution ? (
@@ -194,45 +186,45 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
           </svg>
           <p className="text-base text-gray-500">Henüz dağıtım yapılmamış.</p>
-          <p className="text-xs text-gray-600 mt-1">Admin panelinden &quot;Günü Dağıt&quot; yapıldığında seanslar burada görünecek.</p>
+          <p className="text-xs text-gray-600 mt-1">Admin panelinden &quot;Günü Dağıt&quot; yapıldığında gruplar burada görünecek.</p>
         </div>
       ) : (
         <>
-          {/* Seans seçici */}
+          {/* Grup seçici */}
           <div className="bg-dark-800 rounded-2xl border border-dark-500 p-5">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Seans Seçin</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Grup Seçin</label>
             {DEMO_FIXED_TIME_HM ? (
               <p className="text-[11px] text-amber-400/90 mb-2 rounded-lg border border-amber-600/30 bg-amber-500/10 px-2 py-1.5">
-                Deneme görünümü: saat <strong className="text-amber-300">{String(DEMO_FIXED_TIME_HM[0]).padStart(2, "0")}:{String(DEMO_FIXED_TIME_HM[1]).padStart(2, "0")}</strong>{" "}
-                sabit (gerçek saate dönmek için geliştiricide bu sabiti kapatın).
+                Deneme: saat <strong className="text-amber-300">{String(DEMO_FIXED_TIME_HM[0]).padStart(2, "0")}:{String(DEMO_FIXED_TIME_HM[1]).padStart(2, "0")}</strong>
               </p>
             ) : (
-              <p className="text-[11px] text-gray-600 mb-2">Bugünün saatine göre geçmiş seanslar soluk ve &quot;Geçti&quot; etiketiyle gösterilir.</p>
+              <p className="text-[11px] text-gray-600 mb-2">Saati geçen gruplar soluk ve &quot;Geçti&quot; etiketiyle gösterilir.</p>
             )}
             <div className="space-y-2">
-              {sessions.map((s) => {
-                const count = getSessionStudentCount(s.id);
-                const isSelected = selectedSessionId === s.id;
-                const now = getClockNowForSessionUi(nowTick);
-                const timePast = isSessionTimePast(s, now);
+              {getSortedGroups(distribution!).map(({ groupId, group }) => {
+                const count = getGroupStudentCount(groupId);
+                const isSelected = selectedGroupId === groupId;
+                const now = getClockNow(nowTick);
+                const timePast = isGroupTimePast(group, now);
+                const isPickup = group.type === "pickup";
                 const baseIdle =
                   timePast && !isSelected
                     ? "border-dark-600 bg-dark-800/70 opacity-70 hover:bg-dark-700/80 hover:opacity-90"
                     : "border-dark-400 bg-dark-700 hover:bg-dark-600";
                 const selectedIdle =
                   isSelected && timePast
-                    ? s.type === "pickup"
+                    ? isPickup
                       ? "border-green-500/25 bg-green-500/5 opacity-90"
                       : "border-blue-500/25 bg-blue-500/5 opacity-90"
                     : isSelected
-                      ? s.type === "pickup"
+                      ? isPickup
                         ? "border-green-500/40 bg-green-500/10"
                         : "border-blue-500/40 bg-blue-500/10"
                       : baseIdle;
                 return (
                   <button
-                    key={s.id}
-                    onClick={() => setSelectedSessionId(isSelected ? "" : s.id)}
+                    key={groupId}
+                    onClick={() => setSelectedGroupId(isSelected ? "" : groupId)}
                     className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl border transition ${selectedIdle}`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
@@ -240,7 +232,7 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
                         className={`w-2 h-2 rounded-full shrink-0 ${
                           timePast
                             ? "bg-gray-600"
-                            : s.type === "pickup"
+                            : isPickup
                               ? "bg-green-400"
                               : "bg-blue-400"
                         }`}
@@ -250,7 +242,7 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
                           <p className={`text-sm font-medium truncate ${
                             isSelected ? "text-white" : timePast ? "text-gray-500" : "text-gray-300"
                           }`}>
-                            {s.label}
+                            {group.label}
                           </p>
                           {timePast && (
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600 bg-dark-600 px-1.5 py-0.5 rounded">
@@ -259,7 +251,7 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
                           )}
                         </div>
                         <p className={`text-xs ${timePast ? "text-gray-600" : "text-gray-500"}`}>
-                          {s.time} · {s.type === "pickup" ? "Evlerden Okula" : "Okuldan Evlere"}
+                          {group.time} · {isPickup ? "Evlerden Okula" : "Okuldan Evlere"}
                         </p>
                       </div>
                     </div>
@@ -285,35 +277,34 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
             </div>
           </div>
 
-          {/* Seçilen seans detayı */}
-          {selectedSession && (
+          {/* Seçilen grup detayı */}
+          {selectedGroup && (
             <>
-              {/* Rota Oluştur */}
               <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-base font-semibold text-white">Rota Oluşturma</h2>
                   <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                    selectedSession.type === "pickup"
+                    selectedGroup.type === "pickup"
                       ? "bg-green-500/15 text-green-400"
                       : "bg-blue-500/15 text-blue-400"
                   }`}>
-                    {selectedSession.type === "pickup" ? "Evlerden Okula" : "Okuldan Evlere"}
+                    {selectedGroup.type === "pickup" ? "Evlerden Okula" : "Okuldan Evlere"}
                   </span>
                 </div>
 
                 <div className={`rounded-xl p-3 text-center text-sm font-medium mb-4 ${
-                  selectedSession.type === "pickup"
+                  selectedGroup.type === "pickup"
                     ? "bg-green-500/10 text-green-400 border border-green-500/20"
                     : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
                 }`}>
-                  {selectedSession.type === "pickup"
+                  {selectedGroup.type === "pickup"
                     ? "Mevcut konumunuzdan öğrencileri toplayıp okula bırakır"
                     : "Okuldan öğrencileri alıp evlerine bırakır"}
                 </div>
 
                 <button
                   onClick={handleGenerateRoute}
-                  disabled={routeLoading || sessionStudents.length === 0}
+                  disabled={routeLoading || groupStudents.length === 0}
                   className="w-full bg-accent hover:bg-accent-hover disabled:bg-dark-600 disabled:text-gray-500 disabled:cursor-not-allowed text-dark-900 font-semibold py-4 px-6 rounded-xl text-base transition flex items-center justify-center gap-2"
                 >
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -333,30 +324,29 @@ export default function DriverDashboard({ vehicle, sessions, initialDistribution
                   </a>
                 )}
 
-                {sessionStudents.length === 0 && !loading && (
+                {groupStudents.length === 0 && !loading && (
                   <p className="text-xs text-gray-600 text-center mt-3">
-                    Bu seansta size atanmış öğrenci yok.
+                    Bu grupta size atanmış öğrenci yok.
                   </p>
                 )}
               </div>
 
-              {/* Öğrenci listesi */}
               <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
                 <h2 className="text-base font-semibold text-white mb-4">
-                  {selectedSession.label} - Öğrenci Listesi
+                  {selectedGroup.label} - Öğrenci Listesi
                 </h2>
 
                 {loading ? (
                   <div className="text-center py-10 text-gray-500">
                     <p className="text-sm">Yükleniyor...</p>
                   </div>
-                ) : sessionStudents.length === 0 ? (
+                ) : groupStudents.length === 0 ? (
                   <div className="text-center py-10 text-gray-500">
-                    <p className="text-sm">Bu seansta size atanmış öğrenci yok.</p>
+                    <p className="text-sm">Bu grupta size atanmış öğrenci yok.</p>
                   </div>
                 ) : (
                   <ul className="divide-y divide-dark-500">
-                    {sessionStudents.map((student, index) => (
+                    {groupStudents.map((student, index) => (
                       <li key={student.id} className="flex items-center gap-3 py-3.5">
                         <span className="w-9 h-9 rounded-lg bg-accent/10 text-accent text-sm font-bold flex items-center justify-center shrink-0">
                           {index + 1}

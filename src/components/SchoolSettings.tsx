@@ -4,7 +4,7 @@ import { useState } from "react";
 import { SchoolInfo } from "@/lib/types";
 import { saveSchool } from "@/lib/actions";
 
-export default function SchoolSettings({ initialSchool }: { initialSchool: SchoolInfo }) {
+export default function SchoolSettings({ schoolId, initialSchool }: { schoolId: string; initialSchool: SchoolInfo }) {
   const [school, setSchool] = useState(initialSchool);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -16,7 +16,7 @@ export default function SchoolSettings({ initialSchool }: { initialSchool: Schoo
     setError("");
 
     const formData = new FormData(e.currentTarget);
-    const result = await saveSchool(formData);
+    const result = await saveSchool(schoolId, formData);
 
     if (result.error) {
       setError(result.error);

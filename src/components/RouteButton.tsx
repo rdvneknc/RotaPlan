@@ -5,12 +5,13 @@ import { getRouteLink } from "@/lib/actions";
 import { RouteMode } from "@/lib/types";
 
 interface Props {
+  schoolId: string;
   activeCount: number;
   vehicleId?: string;
   sessionType?: "pickup" | "dropoff" | null;
 }
 
-export default function RouteButton({ activeCount, vehicleId, sessionType }: Props) {
+export default function RouteButton({ schoolId, activeCount, vehicleId, sessionType }: Props) {
   const [mode, setMode] = useState<RouteMode>(sessionType || "pickup");
   const [loading, setLoading] = useState(false);
   const [routeLink, setRouteLink] = useState<string | null>(null);
@@ -25,7 +26,7 @@ export default function RouteButton({ activeCount, vehicleId, sessionType }: Pro
     setError("");
     setRouteLink(null);
 
-    const link = await getRouteLink(mode, vehicleId);
+    const link = await getRouteLink(schoolId, mode, vehicleId);
 
     if (!link) {
       setError("Aktif öğrenci yok.");
