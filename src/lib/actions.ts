@@ -47,6 +47,7 @@ import {
   getClassDuration,
   setClassDuration as storeSetClassDuration,
   type SessionDistributionAssignment,
+  getVehicleCountSuggestionForDay,
   // Registry (super-admin)
   getSchools,
   getSchoolById,
@@ -681,6 +682,10 @@ export async function distributeDailyAllAction(schoolId: string, scope: "day" | 
   return result;
 }
 
+export async function fetchVehicleCountSuggestion(schoolId: string, dayKey: string) {
+  return getVehicleCountSuggestionForDay(schoolId, dayKey);
+}
+
 export async function fetchDailyDistribution(schoolId: string, forVehicleId?: string) {
   if (forVehicleId) {
     const g = await assertDriverOrAdminVehicle(schoolId, forVehicleId);
@@ -723,10 +728,15 @@ export async function fetchGroupDistribution(schoolId: string, groupId: string, 
   return getGroupDistribution(schoolId, groupId, vehicleId);
 }
 
-export async function getRouteLinkForGroup(schoolId: string, groupId: string, vehicleId: string) {
+export async function getRouteLinkForGroup(
+  schoolId: string,
+  groupId: string,
+  vehicleId: string,
+  excludeStudentIds?: string[],
+) {
   const g = await assertDriverOrAdminVehicle(schoolId, vehicleId);
   if (g.error) return "";
-  return generateRouteLinkForGroup(schoolId, groupId, vehicleId);
+  return generateRouteLinkForGroup(schoolId, groupId, vehicleId, excludeStudentIds) ?? "";
 }
 
 export async function fetchClassDuration(schoolId: string) {

@@ -1,5 +1,5 @@
 import { Student, Vehicle, Session, SchoolInfo, School, AppUser, RouteMode, DailyDistribution } from "./types";
-import { distributeStudents } from "./optimizer";
+import { distributeStudents, suggestVehicleCount, type VehicleCountSuggestion } from "./optimizer";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
@@ -1012,6 +1012,38 @@ export function getDailyDistribution(schoolId: string): DailyDistribution | null
   return getTodayDistribution(readSchoolData(schoolId));
 }
 
+export function getVehicleCountSuggestionForDay(schoolId: string, dayKey: string): VehicleCountSuggestion | null {
+  const data = readSchoolData(schoolId);
+  if (data.vehicles.length === 0) return null;
+
+  const daySchedule = data.weeklySchedule[dayKey] || {};
+  const sortedSessions = [...data.sessions].sort((a, b) => a.time.localeCompare(b.time));
+
+  const allStudentIdsOnDay = new Set<string>();
+  for (const session of sortedSessions) {
+    const ids = daySchedule[session.id] ?? session.studentIds;
+    for (const sid of ids) {
+      if (data.students.some((s) => s.id === sid)) allStudentIdsOnDay.add(sid);
+    }
+  }
+
+  if (allStudentIdsOnDay.size === 0) return null;
+
+  const studs = data.students
+    .filter((s) => allStudentIdsOnDay.has(s.id))
+    .map((s) => ({ ...s, isActive: true }));
+
+  const configured = data.weeklyWorkingVehicles?.[dayKey];
+  let vehiclesToUse = data.vehicles;
+  if (configured !== undefined && configured.length > 0) {
+    const allowed = new Set(configured);
+    vehiclesToUse = data.vehicles.filter((v) => allowed.has(v.id));
+  }
+  if (vehiclesToUse.length === 0) vehiclesToUse = data.vehicles;
+
+  return suggestVehicleCount(studs, vehiclesToUse, data.school);
+}
+
 export function getDistributionDayKeysWithData(schoolId: string): string[] {
   const data = readSchoolData(schoolId);
   const map = ensureDistributionByDay(data);
@@ -1099,7 +1131,12 @@ export function getGroupDistribution(schoolId: string, groupId: string, vehicleI
     .filter((s): s is Student => !!s);
 }
 
-export function generateRouteLinkForGroup(schoolId: string, groupId: string, vehicleId: string): string | null {
+export function generateRouteLinkForGroup(
+  schoolId: string,
+  groupId: string,
+  vehicleId: string,
+  excludeStudentIds?: string[] | null,
+): string | null {
   const data = readSchoolData(schoolId);
   const dist = getTodayDistribution(data);
   if (!dist || !dist[groupId]) return null;
@@ -1109,9 +1146,14 @@ export function generateRouteLinkForGroup(schoolId: string, groupId: string, veh
     .filter((a) => a.vehicleId === vehicleId)
     .sort((a, b) => a.order - b.order);
 
-  const students = assignments
+  let students = assignments
     .map((a) => data.students.find((s) => s.id === a.studentId))
     .filter((s): s is Student => !!s);
+
+  if (excludeStudentIds?.length) {
+    const skip = new Set(excludeStudentIds);
+    students = students.filter((s) => !skip.has(s.id));
+  }
 
   if (students.length === 0) return null;
 

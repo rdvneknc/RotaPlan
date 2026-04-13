@@ -210,6 +210,24 @@ export interface DistributionResult {
   assignments: { studentId: string; vehicleId: string; order: number }[];
 }
 
+export interface VehicleRecommendation {
+  /** 1..N: kaç araçla denendi */
+  vehicleCount: number;
+  /** Her araç kümesinin kuş uçuşu rota uzunluğu (km), en uzundan kısaya */
+  routeLengths: number[];
+  /** En uzun rota (km) */
+  maxRouteKm: number;
+  /** Toplam rota (km) */
+  totalRouteKm: number;
+}
+
+export interface VehicleCountSuggestion {
+  recommended: number;
+  totalVehicles: number;
+  studentCount: number;
+  simulations: VehicleRecommendation[];
+}
+
 /**
  * Distributes active students across vehicles by balanced geographic clustering,
  * then orders each cluster for an efficient route.
@@ -253,4 +271,92 @@ export function distributeStudents(
   }
 
   return { assignments };
+}
+
+function computeRouteLength(students: Student[], school: Point): number {
+  if (students.length === 0) return 0;
+  const ordered = nearestNeighborOrder(students, school);
+  let dist = haversineDistance(school, ordered[0]);
+  for (let i = 1; i < ordered.length; i++) {
+    dist += haversineDistance(ordered[i - 1], ordered[i]);
+  }
+  dist += haversineDistance(ordered[ordered.length - 1], school);
+  return dist;
+}
+
+/**
+ * 1..maxVehicles araç ile simülasyon yapıp her senaryoda en uzun/toplam rota uzunluğunu hesaplar.
+ * Sonra "bir araç daha eklemenin en uzun rotayı anlamlı ölçüde kısaltıp kısaltmadığını" kontrol ederek
+ * optimal araç sayısını önerir.
+ */
+export function suggestVehicleCount(
+  students: Student[],
+  vehicles: Vehicle[],
+  school: Point,
+  improvementThreshold = 0.25,
+): VehicleCountSuggestion {
+  const active = students.filter((s) => s.isActive);
+  if (active.length === 0 || vehicles.length === 0) {
+    return { recommended: 0, totalVehicles: vehicles.length, studentCount: 0, simulations: [] };
+  }
+
+  const sortedVehicles = [...vehicles].sort((a, b) => b.capacity - a.capacity);
+  const maxK = Math.min(sortedVehicles.length, active.length);
+  const simulations: VehicleRecommendation[] = [];
+
+  for (let k = 1; k <= maxK; k++) {
+    const subset = sortedVehicles.slice(0, k);
+    const totalCap = subset.reduce((s, v) => s + v.capacity, 0);
+    if (totalCap < active.length) {
+      simulations.push({
+        vehicleCount: k,
+        routeLengths: [],
+        maxRouteKm: Infinity,
+        totalRouteKm: Infinity,
+      });
+      continue;
+    }
+    const caps = subset.map((v) => v.capacity);
+    const clusters = balancedKMeansCluster(active, k, caps);
+    const lengths = clusters
+      .map((cl) => (cl.length > 0 ? computeRouteLength(cl, school) : 0))
+      .sort((a, b) => b - a);
+    simulations.push({
+      vehicleCount: k,
+      routeLengths: lengths,
+      maxRouteKm: lengths[0] ?? 0,
+      totalRouteKm: lengths.reduce((s, l) => s + l, 0),
+    });
+  }
+
+  let recommended = 1;
+  for (let i = 0; i < simulations.length; i++) {
+    if (simulations[i].maxRouteKm === Infinity) {
+      continue;
+    }
+    recommended = simulations[i].vehicleCount;
+    break;
+  }
+
+  for (let i = recommended; i < simulations.length; i++) {
+    const prev = simulations[i - 1];
+    const cur = simulations[i];
+    if (prev.maxRouteKm === Infinity || prev.maxRouteKm === 0) {
+      if (cur.maxRouteKm < Infinity) recommended = cur.vehicleCount;
+      continue;
+    }
+    const improvement = (prev.maxRouteKm - cur.maxRouteKm) / prev.maxRouteKm;
+    if (improvement >= improvementThreshold) {
+      recommended = cur.vehicleCount;
+    } else {
+      break;
+    }
+  }
+
+  return {
+    recommended,
+    totalVehicles: vehicles.length,
+    studentCount: active.length,
+    simulations,
+  };
 }

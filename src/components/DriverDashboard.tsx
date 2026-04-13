@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Student, Vehicle, DailyDistribution, DistributionGroup } from "@/lib/types";
 import { fetchDailyDistribution, fetchGroupDistribution, fetchVehicleWorkingToday, getRouteLinkForGroup } from "@/lib/actions";
 
@@ -43,6 +43,13 @@ function getSortedGroups(dist: DailyDistribution): { groupId: string; group: Dis
     });
 }
 
+/** Tamamlanan (bırakılan/toplanan) öğrenci id’leri — aynı cihazda bugün için hatırlanır. */
+function driverCompletedStudentsKey(schoolId: string, vehicleId: string, groupId: string): string {
+  const d = new Date();
+  const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `rp:driverDoneStudents:v1:${schoolId}:${vehicleId}:${groupId}:${ds}`;
+}
+
 interface Props {
   schoolId: string;
   vehicle: Vehicle;
@@ -56,6 +63,8 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
   const [loading, setLoading] = useState(false);
   const [routeLink, setRouteLink] = useState<string | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
+  /** Manuel işaret: bu grupta rota dışı bırakılan öğrenciler */
+  const [completedStudentIds, setCompletedStudentIds] = useState<Set<string>>(() => new Set());
   const [distribution, setDistribution] = useState<DailyDistribution | null>(initialDistribution);
   const [workingToday, setWorkingToday] = useState(initialWorkingToday);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -86,10 +95,36 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
     : 0;
 
   const loadGroupStudents = useCallback(async (gid: string) => {
-    if (!gid) { setGroupStudents([]); return; }
+    if (!gid) {
+      setGroupStudents([]);
+      setCompletedStudentIds(new Set());
+      return;
+    }
     setLoading(true);
     const data = await fetchGroupDistribution(schoolId, gid, vehicle.id);
     setGroupStudents(data);
+    try {
+      const key = driverCompletedStudentsKey(schoolId, vehicle.id, gid);
+      const raw = localStorage.getItem(key);
+      const validIds = new Set(data.map((s) => s.id));
+      let parsed: string[] = [];
+      if (raw) {
+        try {
+          parsed = JSON.parse(raw) as string[];
+          if (!Array.isArray(parsed)) parsed = [];
+        } catch {
+          parsed = [];
+        }
+      }
+      const kept = parsed.filter((id) => validIds.has(id));
+      if (kept.length !== parsed.length) {
+        if (kept.length) localStorage.setItem(key, JSON.stringify(kept));
+        else localStorage.removeItem(key);
+      }
+      setCompletedStudentIds(new Set(kept));
+    } catch {
+      setCompletedStudentIds(new Set());
+    }
     setLoading(false);
   }, [schoolId, vehicle.id]);
 
@@ -103,6 +138,7 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
     if (next == null) {
       setSelectedGroupId("");
       setGroupStudents([]);
+      setCompletedStudentIds(new Set());
       setRouteLink(null);
     } else {
       const gid = selectedGroupRef.current;
@@ -116,9 +152,41 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
       setRouteLink(null);
     } else {
       setGroupStudents([]);
+      setCompletedStudentIds(new Set());
       setRouteLink(null);
     }
   }, [selectedGroupId, loadGroupStudents]);
+
+  function persistCompleted(gid: string, ids: Set<string>) {
+    try {
+      const key = driverCompletedStudentsKey(schoolId, vehicle.id, gid);
+      const arr = Array.from(ids);
+      if (arr.length) localStorage.setItem(key, JSON.stringify(arr));
+      else localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function toggleStudentCompleted(studentId: string) {
+    setCompletedStudentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      if (selectedGroupId) persistCompleted(selectedGroupId, next);
+      return next;
+    });
+  }
+
+  function clearAllCompleted() {
+    setCompletedStudentIds(new Set());
+    if (selectedGroupId) persistCompleted(selectedGroupId, new Set());
+  }
+
+  const remainingStopsCount = useMemo(() => {
+    if (groupStudents.length === 0) return 0;
+    return groupStudents.filter((s) => !completedStudentIds.has(s.id)).length;
+  }, [groupStudents, completedStudentIds]);
 
   useEffect(() => {
     void syncDistribution();
@@ -141,7 +209,13 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
   async function handleGenerateRoute() {
     if (!selectedGroupId) return;
     setRouteLoading(true);
-    const link = await getRouteLinkForGroup(schoolId, selectedGroupId, vehicle.id);
+    const exclude = groupStudents.filter((s) => completedStudentIds.has(s.id)).map((s) => s.id);
+    const link = await getRouteLinkForGroup(
+      schoolId,
+      selectedGroupId,
+      vehicle.id,
+      exclude.length > 0 ? exclude : undefined,
+    );
     if (link) {
       setRouteLink(link);
       const w = window.open(link, "_blank");
@@ -302,15 +376,25 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
                     : "Okuldan öğrencileri alıp evlerine bırakır"}
                 </div>
 
+                {groupStudents.length > 0 && (
+                  <p className="text-[11px] text-gray-600 mb-4 rounded-lg border border-dark-500 bg-dark-700/40 px-3 py-2">
+                    Aşağıdaki listede bitirdiğiniz öğrencilere dokunun (tiklenir). Rota yalnızca kalanlar için oluşur.
+                    Otomatik algılama yok — aynı cihazda bugün için kayıtlıdır.
+                  </p>
+                )}
+
                 <button
                   onClick={handleGenerateRoute}
-                  disabled={routeLoading || groupStudents.length === 0}
+                  disabled={routeLoading || groupStudents.length === 0 || remainingStopsCount === 0}
                   className="w-full bg-accent hover:bg-accent-hover disabled:bg-dark-600 disabled:text-gray-500 disabled:cursor-not-allowed text-dark-900 font-semibold py-4 px-6 rounded-xl text-base transition flex items-center justify-center gap-2"
                 >
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                   </svg>
-                  {routeLoading ? "Oluşturuluyor..." : "Rota Oluştur"}
+                  {routeLoading ? "Oluşturuluyor..."
+                    : remainingStopsCount < groupStudents.length && groupStudents.length > 0
+                      ? `Rota Oluştur (${remainingStopsCount} durak)`
+                      : "Rota Oluştur"}
                 </button>
 
                 {routeLink && (
@@ -332,9 +416,27 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
               </div>
 
               <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
-                <h2 className="text-base font-semibold text-white mb-4">
-                  {selectedGroup.label} - Öğrenci Listesi
-                </h2>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-white">
+                      {selectedGroup.label} - Öğrenci Listesi
+                    </h2>
+                    <p className="text-[11px] text-gray-600 mt-1">
+                      {selectedGroup.type === "dropoff"
+                        ? "Evine bıraktığınız öğrenciye dokunun — tiklenir."
+                        : "Okula topladığınız öğrenciye dokunun — tiklenir."}
+                    </p>
+                  </div>
+                  {groupStudents.length > 0 && completedStudentIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearAllCompleted}
+                      className="text-[11px] font-medium text-amber-400/90 hover:text-amber-300 shrink-0 pt-0.5"
+                    >
+                      İşaretleri temizle
+                    </button>
+                  )}
+                </div>
 
                 {loading ? (
                   <div className="text-center py-10 text-gray-500">
@@ -345,36 +447,76 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
                     <p className="text-sm">Bu grupta size atanmış öğrenci yok.</p>
                   </div>
                 ) : (
-                  <ul className="divide-y divide-dark-500">
-                    {groupStudents.map((student, index) => (
-                      <li key={student.id} className="flex items-center gap-3 py-3.5">
-                        <span className="w-9 h-9 rounded-lg bg-accent/10 text-accent text-sm font-bold flex items-center justify-center shrink-0">
-                          {index + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-base font-medium text-white">{student.name}</p>
-                          <p className="text-sm text-gray-500 truncate flex items-center gap-1">
-                            <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <ul className="space-y-2">
+                    {groupStudents.map((student, index) => {
+                      const done = completedStudentIds.has(student.id);
+                      return (
+                        <li key={student.id} className="flex items-stretch gap-2">
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={done}
+                            onClick={() => toggleStudentCompleted(student.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleStudentCompleted(student.id);
+                              }
+                            }}
+                            className={`min-w-0 flex-1 flex items-center gap-3 py-3 px-3 rounded-xl border text-left cursor-pointer transition ${
+                              done
+                                ? "bg-emerald-500/[0.12] border-emerald-500/35 hover:bg-emerald-500/[0.16]"
+                                : "bg-dark-700/40 border-dark-500 hover:bg-dark-600/50"
+                            }`}
+                          >
+                            <span
+                              className={`w-9 h-9 rounded-lg text-sm font-bold flex items-center justify-center shrink-0 ${
+                                done
+                                  ? "bg-emerald-500/25 text-emerald-400"
+                                  : "bg-accent/10 text-accent"
+                              }`}
+                            >
+                              {done ? (
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              ) : (
+                                index + 1
+                              )}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-base font-medium ${done ? "text-emerald-100/95" : "text-white"}`}>
+                                {student.name}
+                              </p>
+                              <p className="text-sm text-gray-500 truncate flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                {student.label}
+                              </p>
+                              {done && (
+                                <p className="text-[10px] font-medium text-emerald-400/90 mt-1">
+                                  {selectedGroup.type === "dropoff" ? "Bırakıldı" : "Tamamlandı"}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <a
+                            href={student.mapsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="self-center p-2.5 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition shrink-0 border border-transparent"
+                            title="Haritada Göster"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                               <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>
-                            {student.label}
-                          </p>
-                        </div>
-                        <a
-                          href={student.mapsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-2.5 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition"
-                          title="Haritada Göster"
-                        >
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                        </a>
-                      </li>
-                    ))}
+                          </a>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

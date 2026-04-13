@@ -11,7 +11,9 @@ import {
   fetchWorkingVehicleIdsForDay,
   setWorkingVehicleIdsForDayAction,
   updateDailyDistributionGroupAction,
+  fetchVehicleCountSuggestion,
 } from "@/lib/actions";
+import type { VehicleCountSuggestion } from "@/lib/optimizer";
 
 interface Props {
   schoolId: string;
@@ -109,10 +111,24 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
   const [todaySchedule, setTodaySchedule] = useState<{ [sessionId: string]: string[] }>({});
   const [workingVehicleIds, setWorkingVehicleIds] = useState<string[]>([]);
   const [savingGroupId, setSavingGroupId] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<VehicleCountSuggestion | null>(null);
+  const [suggestionLoading, setSuggestionLoading] = useState(false);
   const dragRef = useRef<{ groupId: string; studentId: string } | null>(null);
 
   const todayKey = String(new Date().getDay());
   const todayLabel = DAY_LABELS[todayKey] || "Bugün";
+
+  const loadSuggestion = useCallback(async () => {
+    setSuggestionLoading(true);
+    try {
+      const s = await fetchVehicleCountSuggestion(schoolId, todayKey);
+      setSuggestion(s);
+    } catch {
+      setSuggestion(null);
+    } finally {
+      setSuggestionLoading(false);
+    }
+  }, [schoolId, todayKey]);
 
   const loadData = useCallback(async () => {
     const [dist, sched, working, dayKeys] = await Promise.all([
@@ -129,7 +145,8 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    loadSuggestion();
+  }, [loadData, loadSuggestion]);
 
   function getSessionStudentCount(session: Session): number {
     const fromSchedule = todaySchedule[session.id];
@@ -393,6 +410,59 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
             Tümünü çalışıyor olarak işaretle
           </button>
         </CollapsibleBlock>
+      )}
+
+      {/* Araç önerisi */}
+      {suggestion && suggestion.studentCount > 0 && suggestion.simulations.length > 1 && (
+        <CollapsibleBlock
+          title="Araç Sayısı Önerisi"
+          summary={`${suggestion.recommended} araç önerilir`}
+          defaultOpen={false}
+        >
+          <div className="space-y-2">
+            <p className="text-xs text-gray-400">
+              Bugün <span className="text-white font-medium">{suggestion.studentCount}</span> öğrenci,{" "}
+              <span className="text-white font-medium">{suggestion.totalVehicles}</span> araç mevcut.
+              Coğrafi dağılıma göre{" "}
+              <span className="text-accent font-semibold">{suggestion.recommended} araç</span> önerilir.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="border-b border-dark-500 text-gray-500">
+                    <th className="py-1 pr-2">Araç</th>
+                    <th className="py-1 pr-2">En uzun rota</th>
+                    <th className="py-1">Toplam rota</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {suggestion.simulations
+                    .filter((s) => s.maxRouteKm < Infinity)
+                    .map((s) => (
+                      <tr
+                        key={s.vehicleCount}
+                        className={`border-b border-dark-600 ${
+                          s.vehicleCount === suggestion.recommended
+                            ? "bg-accent/10 text-accent"
+                            : "text-gray-300"
+                        }`}
+                      >
+                        <td className="py-1.5 pr-2 font-medium">{s.vehicleCount} araç</td>
+                        <td className="py-1.5 pr-2 font-mono">{s.maxRouteKm.toFixed(1)} km</td>
+                        <td className="py-1.5 font-mono">{s.totalRouteKm.toFixed(1)} km</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-gray-600 mt-1">
+              Kuş uçuşu mesafe tahminidir. Gerçek sürüş mesafesi trafik ve yol durumuna göre değişir.
+            </p>
+          </div>
+        </CollapsibleBlock>
+      )}
+      {suggestionLoading && vehicles.length > 0 && totalStudentsToday > 0 && (
+        <div className="text-xs text-gray-500 text-center py-2 animate-pulse">Araç önerisi hesaplanıyor...</div>
       )}
 
       {/* Dağıt / Geri al */}
