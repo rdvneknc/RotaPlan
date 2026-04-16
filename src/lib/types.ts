@@ -33,6 +33,13 @@ export type DailyDistribution = {
   [groupId: string]: DistributionGroup;
 };
 
+/** Günlük dağıtım grubunda araç–öğrenci sırası (manuel düzenleme / API). */
+export interface SessionDistributionAssignment {
+  studentId: string;
+  vehicleId: string;
+  order: number;
+}
+
 export interface Vehicle {
   id: string;
   slug: string;

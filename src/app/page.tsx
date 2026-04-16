@@ -14,7 +14,7 @@ export default async function Home() {
     if (session.schoolId) redirect(`/admin/${session.schoolId}`);
   }
   return (
-    <div className="min-h-screen bg-dark-900 flex items-center justify-center p-4">
+    <div className="min-h-dvh bg-dark-900 flex items-center justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <div className="w-20 h-20 rounded-2xl bg-accent flex items-center justify-center mx-auto mb-4">

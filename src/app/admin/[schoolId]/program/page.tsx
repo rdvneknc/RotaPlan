@@ -19,17 +19,17 @@ export default async function ProgramPage({ params }: { params: Promise<{ school
   const { schoolId } = await params;
   if (session.role !== "superadmin" && session.schoolId !== schoolId) redirect("/login");
 
-  const schoolReg = getSchoolById(schoolId);
+  const schoolReg = await getSchoolById(schoolId);
   if (!schoolReg) notFound();
 
-  const students = getStudents(schoolId);
-  const school = getSchool(schoolId);
-  const sessions = getSessions(schoolId);
+  const students = await getStudents(schoolId);
+  const school = await getSchool(schoolId);
+  const sessions = await getSessions(schoolId);
 
   return (
     <div className="min-h-screen bg-dark-900">
       <Header schoolLabel={schoolReg.name || school.label} role="admin" userEmail={session.email} />
-      <main className="max-w-7xl mx-auto px-6 py-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <div className="mb-4">
           <Link
             href={`/admin/${schoolId}`}
@@ -49,7 +49,7 @@ export default async function ProgramPage({ params }: { params: Promise<{ school
           googleSheetsConfigured={isGoogleSheetsConfigured()}
         />
       </main>
-      <footer className="max-w-7xl mx-auto px-6 py-6 text-center">
+      <footer className="max-w-7xl mx-auto px-3 sm:px-6 py-6 text-center">
         <p className="text-xs text-gray-700">RotaPlan v0.2</p>
       </footer>
     </div>

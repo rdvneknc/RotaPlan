@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Student, Vehicle, DailyDistribution, DistributionGroup } from "@/lib/types";
 import { fetchDailyDistribution, fetchGroupDistribution, fetchVehicleWorkingToday, getRouteLinkForGroup } from "@/lib/actions";
+import { studentMapOpenUrl } from "@/lib/parse-maps-url";
 
 const DISTRIBUTION_POLL_MS = 60_000;
 
@@ -227,7 +228,7 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
   const hasDistribution = distribution && Object.keys(distribution).length > 0;
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+    <main className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
       {/* Araç bilgisi */}
       <div className="bg-dark-800 rounded-2xl border border-dark-500 p-5">
         <div className="flex items-center gap-3">
@@ -450,6 +451,7 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
                   <ul className="space-y-2">
                     {groupStudents.map((student, index) => {
                       const done = completedStudentIds.has(student.id);
+                      const pinHref = studentMapOpenUrl(student);
                       return (
                         <li key={student.id} className="flex items-stretch gap-2">
                           <div
@@ -502,18 +504,30 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
                               )}
                             </div>
                           </div>
-                          <a
-                            href={student.mapsUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="self-center p-2.5 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition shrink-0 border border-transparent"
-                            title="Haritada Göster"
-                          >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                          </a>
+                          {pinHref ? (
+                            <a
+                              href={pinHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="self-center p-2.5 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition shrink-0 border border-transparent"
+                              title="Haritada Göster"
+                            >
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                            </a>
+                          ) : (
+                            <span
+                              className="self-center p-2.5 text-gray-600 shrink-0 opacity-50 cursor-not-allowed"
+                              title="Konum bilgisi yok"
+                            >
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                            </span>
+                          )}
                         </li>
                       );
                     })}

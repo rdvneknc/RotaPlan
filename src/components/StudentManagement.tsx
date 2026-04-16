@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Student, Vehicle, Session } from "@/lib/types";
 import { removeStudent } from "@/lib/actions";
+import { studentMapOpenUrl } from "@/lib/parse-maps-url";
 import AddStudentForm from "./AddStudentForm";
 import EditStudentModal from "./EditStudentModal";
 
@@ -36,8 +37,8 @@ export default function StudentManagement({ schoolId, students, vehicles, sessio
   }
 
   return (
-    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
         <h2 className="text-base font-semibold text-white">Öğrenci Yönetimi</h2>
         <button
           onClick={() => setShowForm(!showForm)}
@@ -86,6 +87,7 @@ export default function StudentManagement({ schoolId, students, vehicles, sessio
           <ul className="divide-y divide-dark-500">
             {students.map((student) => {
               const vehicleLabel = getVehicleLabel(student.vehicleId);
+              const pinHref = studentMapOpenUrl(student);
               return (
                 <li
                   key={student.id}
@@ -107,18 +109,27 @@ export default function StudentManagement({ schoolId, students, vehicles, sessio
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <a
-                      href={student.mapsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-2 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition"
-                      title="Haritada Göster"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    </a>
+                    {pinHref ? (
+                      <a
+                        href={pinHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition"
+                        title="Haritada Göster"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </a>
+                    ) : (
+                      <span className="p-2 text-gray-600 opacity-50 cursor-not-allowed" title="Konum bilgisi yok">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </span>
+                    )}
                     <button
                       onClick={() => setEditingStudent(student)}
                       className="p-2 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition"

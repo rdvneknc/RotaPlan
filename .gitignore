@@ -4,3 +4,8 @@ out/
 data/
 *.tsbuildinfo
 next-env.d.ts
+
+# Secrets & local env (never commit)
+.env
+.env.*
+!.env.example

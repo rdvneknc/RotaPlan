@@ -6,22 +6,24 @@ import Link from "next/link";
 export default function SuperAdminHeader({ email }: { email: string }) {
   return (
     <header className="bg-dark-800 border-b border-dark-500">
-      <div className="max-w-5xl mx-auto px-6 py-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
-              <svg className="w-6 h-6 text-dark-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <div className="max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-5">
+        <div className="flex items-start sm:items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 sm:w-6 sm:h-6 text-dark-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
               </svg>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-white leading-none">RotaPlan</h1>
-              <p className="text-xs text-gray-500 mt-0.5">Süper Admin</p>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-white leading-none">RotaPlan</h1>
+              <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5">Süper Admin</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-[10px] text-gray-600">{email}</p>
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            <div className="text-right max-w-[45vw] sm:max-w-xs min-w-0">
+              <p className="text-[10px] text-gray-600 truncate" title={email}>
+                {email}
+              </p>
             </div>
             <Link
               href="/sifre-degistir"

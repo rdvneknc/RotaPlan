@@ -1,56 +1,20 @@
 /**
- * Admin (e-posta) şifre sıfırlama — altyapı Firestore + e-posta için hazır.
+ * Admin (e-posta) şifre sıfırlama — token saklama `AppStore` üzerinden (dosya veya Firestore).
  *
- * Davranış:
- * - Token'lar dosyada saklanır (`data/password-resets.json`, VERCEL'de /tmp — üretimde Firestore'a taşıyın).
- * - Teslimat: `PASSWORD_RESET_DELIVERY=console` (geliştirme: URL konsola) | `noop` (sessiz).
- * - İleride: aynı public API ile `FirestorePasswordResetStore` + `SmtpPasswordResetDelivery` eklenebilir.
+ * - Teslimat: `PASSWORD_RESET_DELIVERY=console` | `noop`
+ * - E-posta: `deliverResetLink` içinde SMTP / Firebase Extension vb. bağlanır.
  */
 
-import fs from "fs";
-import path from "path";
 import crypto from "crypto";
-import { getUserByEmail, setUserPassword } from "./store";
+import {
+  getUserByEmail,
+  setUserPassword,
+  readPasswordResetTokens,
+  writePasswordResetTokens,
+} from "./store";
+import { updateFirebaseUserPasswordIfExists } from "./firebase/server-auth";
 
-const BASE_DIR = process.env.VERCEL ? "/tmp" : path.join(process.cwd(), "data");
 const TTL_MS = 60 * 60 * 1000; // 1 saat
-
-function resetsFile(): string {
-  return path.join(BASE_DIR, "password-resets.json");
-}
-
-function ensureDirForFile(filePath: string) {
-  const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-
-interface TokenRecord {
-  tokenHash: string;
-  userId: string;
-  email: string;
-  expiresAt: number;
-}
-
-interface ResetFileShape {
-  tokens: TokenRecord[];
-}
-
-function readTokens(): TokenRecord[] {
-  try {
-    const f = resetsFile();
-    if (!fs.existsSync(f)) return [];
-    const raw = JSON.parse(fs.readFileSync(f, "utf-8")) as ResetFileShape;
-    return Array.isArray(raw.tokens) ? raw.tokens : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeTokens(tokens: TokenRecord[]) {
-  const f = resetsFile();
-  ensureDirForFile(f);
-  fs.writeFileSync(f, JSON.stringify({ tokens }, null, 2), "utf-8");
-}
 
 function hashToken(raw: string): string {
   return crypto.createHash("sha256").update(raw, "utf-8").digest("hex");
@@ -72,7 +36,6 @@ async function deliverResetLink(params: {
 }): Promise<void> {
   const mode = getPasswordResetDeliveryMode();
   if (mode === "noop") return;
-  // E-posta entegrasyonu öncesi: bağlantıyı logla. Firestore/SMTP eklenince bu fonksiyon mail gönderecek.
   // eslint-disable-next-line no-console
   console.info(`[RotaPlan şifre sıfırlama] ${params.email} → ${params.resetUrl}`);
 }
@@ -82,7 +45,7 @@ async function deliverResetLink(params: {
  * E-posta yoksa sessizce çıkar (enumeration önlemi — UI her zaman aynı mesajı gösterir).
  */
 export async function initiatePasswordResetForEmail(email: string, publicBaseUrl: string): Promise<void> {
-  const user = getUserByEmail(email);
+  const user = await getUserByEmail(email);
   if (!user) return;
 
   const rawToken = crypto.randomBytes(32).toString("base64url");
@@ -91,52 +54,53 @@ export async function initiatePasswordResetForEmail(email: string, publicBaseUrl
   const expiresAt = now + TTL_MS;
   const userId = user.id;
 
-  const tokens = readTokens().filter((t) => t.expiresAt > now && t.userId !== userId);
+  const tokens = (await readPasswordResetTokens()).filter((t) => t.expiresAt > now && t.userId !== userId);
   tokens.push({ tokenHash, userId, email: user.email, expiresAt });
-  writeTokens(tokens);
+  await writePasswordResetTokens(tokens);
 
   const base = publicBaseUrl.replace(/\/$/, "");
   const resetUrl = `${base}/sifre-sifirla?token=${encodeURIComponent(rawToken)}`;
   await deliverResetLink({ email: user.email, resetUrl, userId });
 }
 
-function findValidUserIdByRawToken(rawToken: string): string | null {
+async function findValidUserIdByRawToken(rawToken: string): Promise<string | null> {
   const h = hashToken(rawToken.trim());
   const now = Date.now();
-  const tokens = readTokens();
+  const tokens = await readPasswordResetTokens();
   const idx = tokens.findIndex((t) => t.tokenHash === h && t.expiresAt > now);
   if (idx === -1) return null;
   return tokens[idx].userId;
 }
 
-export function consumePasswordResetToken(rawToken: string): { userId: string } | null {
+export async function consumePasswordResetToken(rawToken: string): Promise<{ userId: string } | null> {
   const h = hashToken(rawToken.trim());
   const now = Date.now();
-  const tokens = readTokens();
+  const tokens = await readPasswordResetTokens();
   const idx = tokens.findIndex((t) => t.tokenHash === h && t.expiresAt > now);
   if (idx === -1) return null;
   const userId = tokens[idx].userId;
   tokens.splice(idx, 1);
-  writeTokens(tokens);
+  await writePasswordResetTokens(tokens);
   return { userId };
 }
 
-export function validatePasswordResetToken(rawToken: string): boolean {
-  return findValidUserIdByRawToken(rawToken.trim()) !== null;
+export async function validatePasswordResetToken(rawToken: string): Promise<boolean> {
+  return (await findValidUserIdByRawToken(rawToken.trim())) !== null;
 }
 
-export function completePasswordResetWithToken(
+export async function completePasswordResetWithToken(
   rawToken: string,
   newPassword: string,
-): { ok: true } | { error: string } {
+): Promise<{ ok: true } | { error: string }> {
   if (!newPassword || newPassword.length < 4) {
     return { error: "Yeni şifre en az 4 karakter olmalıdır." };
   }
-  const consumed = consumePasswordResetToken(rawToken);
+  const consumed = await consumePasswordResetToken(rawToken);
   if (!consumed) {
     return { error: "Bağlantı geçersiz veya süresi dolmuş. Yeni bir şifre sıfırlama isteyin." };
   }
-  const ok = setUserPassword(consumed.userId, newPassword, false);
+  const ok = await setUserPassword(consumed.userId, newPassword, false);
   if (!ok) return { error: "Şifre güncellenemedi." };
+  await updateFirebaseUserPasswordIfExists(consumed.userId, newPassword);
   return { ok: true };
 }

@@ -52,6 +52,40 @@ export function getServiceAccountEmailFromEnv(): string | null {
   return getCredentials()?.client_email ?? null;
 }
 
+/** 403 / permission hatalarında kullanıcıya net yönlendirme. */
+export function formatGoogleSheetsUserError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes("does not have permission") ||
+    lower.includes("permission_denied") ||
+    lower.includes("insufficient permission") ||
+    (lower.includes("403") && lower.includes("permission"))
+  ) {
+    const email = getServiceAccountEmailFromEnv();
+    const emailLine = email
+      ? `3) “Kişiler ve gruplar” alanına şunu yapıştırın:\n   ${email}\n`
+      : "3) Admin panelinde Okul → Google Sheets bölümünde gösterilen servis hesabı e-postasını ekleyin.\n";
+
+    return [
+      "Google Sheets dosyasına erişim reddedildi (izin yok).",
+      "",
+      "RotaPlan, tabloyu sizin kişisel Google hesabınızla değil; sunucudaki otomasyon hesabı (“servis hesabı”) ile günceller. Bu hesabın tabloda düzenleme yetkisi olması için dosyayı onunla paylaşmanız gerekir.",
+      "",
+      "Şunları sırayla yapın:",
+      "1) Tarayıcıda doğru dosyayı açın (Admin → Okul’da kaydettiğiniz Google Sheets ile aynı olmalı).",
+      "2) Sağ üstteki “Paylaş” düğmesine tıklayın.",
+      `${emailLine}4) Yetki olarak mutlaka “Düzenleyici” seçin. “Görüntüleyici” veya “Yorumlayıcı” ile gönder/al çalışmaz.`,
+      "5) Paylaş’ı onaylayın; birkaç saniye bekleyip burada tekrar “Sheets’e gönder” deneyin.",
+      "",
+      "Hâlâ aynı hatayı alırsanız: Google Cloud Console’da bu servis hesabının bağlı olduğu projede “Google Sheets API”nin etkin olduğunu kontrol edin. Kurumsal Google Workspace hesabında dış e-postayla paylaşım kapalıysa BT yöneticinizden bu adres için izin isteyin.",
+      "",
+      `Teknik özet (destek için): ${raw}`,
+    ].join("\n");
+  }
+  return raw;
+}
+
 async function getSheetsClient() {
   const creds = getCredentials();
   if (!creds) {
@@ -408,6 +442,7 @@ export async function readWeeklyProgramGrid(spreadsheetId: string): Promise<stri
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `'${GOOGLE_SHEET_TAB.replace(/'/g, "''")}'!A1:ZZ2000`,
+    valueRenderOption: "UNFORMATTED_VALUE",
   });
   const values = res.data.values;
   if (!values || values.length === 0) return [];

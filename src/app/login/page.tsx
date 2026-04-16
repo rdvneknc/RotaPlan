@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { loginAction } from "@/lib/actions";
+import { loginAction, finalizeFirebaseAdminLoginAction } from "@/lib/actions";
 import DriverLoginForm from "@/components/DriverLoginForm";
+import { isFirebaseClientConfigured, getFirebaseAuth } from "@/lib/firebase/client-app";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 type LoginMode = "admin" | "driver";
 
@@ -28,15 +30,37 @@ export default function LoginPage() {
 
     const formData = new FormData(e.currentTarget);
     try {
-      const result = await loginAction(formData);
-      if (result?.error) setError(result.error);
+      if (isFirebaseClientConfigured()) {
+        const email = (formData.get("email") as string)?.trim() || "";
+        const password = (formData.get("password") as string) || "";
+        if (!email || !password) {
+          setError("E-posta ve şifre zorunludur.");
+          return;
+        }
+        try {
+          const cred = await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
+          const idToken = await cred.user.getIdToken();
+          const fin = await finalizeFirebaseAdminLoginAction(idToken);
+          if (fin && "error" in fin && fin.error) setError(fin.error);
+        } catch (err: unknown) {
+          const code = err && typeof err === "object" && "code" in err ? String((err as { code: string }).code) : "";
+          if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
+            setError("E-posta veya şifre hatalı.");
+          } else {
+            setError("Giriş başarısız. Bağlantınızı ve Firebase yapılandırmasını kontrol edin.");
+          }
+        }
+      } else {
+        const result = await loginAction(formData);
+        if (result?.error) setError(result.error);
+      }
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-dark-900 flex items-center justify-center p-4">
+    <div className="min-h-dvh bg-dark-900 flex items-center justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
           <div className="w-16 h-16 rounded-2xl bg-accent flex items-center justify-center mx-auto mb-4">

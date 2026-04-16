@@ -3,28 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Session, Student } from "@/lib/types";
 import { fetchWeeklySchedule, updateWeeklyScheduleDay } from "@/lib/actions";
-
-const DAY_LABELS: { [key: string]: string } = {
-  "1": "Pazartesi",
-  "2": "Salı",
-  "3": "Çarşamba",
-  "4": "Perşembe",
-  "5": "Cuma",
-  "6": "Cumartesi",
-  "0": "Pazar",
-};
-
-const DAY_SHORT: { [key: string]: string } = {
-  "1": "Pzt",
-  "2": "Sal",
-  "3": "Çar",
-  "4": "Per",
-  "5": "Cum",
-  "6": "Cmt",
-  "0": "Paz",
-};
-
-const DAYS = ["1", "2", "3", "4", "5", "6", "0"];
+import { DAY_LABELS, DAY_SHORT, DAYS } from "@/lib/weekly-program-shared";
 
 interface Props {
   schoolId: string;
@@ -108,7 +87,7 @@ export default function WeeklySchedule({ schoolId, sessions, students, onRefresh
   }
 
   return (
-    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
+    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 sm:p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-base font-semibold text-white">Haftalık Program</h2>
@@ -116,13 +95,14 @@ export default function WeeklySchedule({ schoolId, sessions, students, onRefresh
         </div>
       </div>
 
-      {/* Day tabs */}
-      <div className="flex bg-dark-700 rounded-xl p-1 gap-1 mb-5">
+      {/* Day tabs — mobilde yatay kaydırma */}
+      <div className="flex overflow-x-auto overscroll-x-contain snap-x snap-mandatory gap-1 p-1 bg-dark-700 rounded-xl mb-5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
         {DAYS.map((day) => (
           <button
             key={day}
+            type="button"
             onClick={() => { setSelectedDay(day); cancelEdit(); setMsg(null); }}
-            className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition ${
+            className={`shrink-0 snap-start min-w-[4.5rem] sm:min-w-0 sm:flex-1 py-2.5 px-1 sm:px-0 text-xs sm:text-sm font-medium rounded-lg transition ${
               selectedDay === day
                 ? "bg-accent text-dark-900"
                 : "text-gray-400 hover:text-white hover:bg-dark-600"
@@ -131,7 +111,7 @@ export default function WeeklySchedule({ schoolId, sessions, students, onRefresh
             <span className="hidden sm:inline">{DAY_LABELS[day]}</span>
             <span className="sm:hidden">{DAY_SHORT[day]}</span>
             {String(todayIndex) === day && (
-              <span className="ml-1 text-[10px] opacity-60">bugün</span>
+              <span className="block sm:inline sm:ml-1 text-[9px] sm:text-[10px] opacity-60 leading-tight">bugün</span>
             )}
           </button>
         ))}

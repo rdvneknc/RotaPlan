@@ -1,4 +1,4 @@
-import { Coordinates } from "./types";
+import type { Coordinates, Student } from "./types";
 
 const COORD_PATTERNS = [
   /@(-?\d+\.\d+),(-?\d+\.\d+)/,            // @37.123,34.456,17z
@@ -65,4 +65,25 @@ export async function parseMapsUrl(
   if (coords) return { coords, resolvedUrl: url };
 
   return { error: "Linkten koordinat bulunamadı. Haritada konumu seçip tekrar kopyalayın." };
+}
+
+/**
+ * Tekil konum açma (şoför / liste). Önce kayıtlı lat/lng ile pin — rota linkindeki duraklarla aynı nokta.
+ * Sadece `mapsUrl` kullanıldığında göreli URL veya mobilde zayıf çözümlenen paylaşım linkleri hatalı hedef verebiliyor.
+ */
+export function studentMapOpenUrl(student: Pick<Student, "lat" | "lng" | "mapsUrl">): string | null {
+  const { lat, lng, mapsUrl } = student;
+  if (
+    typeof lat === "number" &&
+    typeof lng === "number" &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    !(lat === 0 && lng === 0)
+  ) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`;
+  }
+  const raw = (mapsUrl || "").trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return `https://${raw.replace(/^\/+/, "")}`;
 }

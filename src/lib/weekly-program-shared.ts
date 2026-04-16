@@ -12,6 +12,17 @@ export const DAY_LABELS: { [key: string]: string } = {
 
 export const DAYS = ["1", "2", "3", "4", "5", "6", "0"] as const;
 
+/** Mobil gün sekmeleri için kısa etiket */
+export const DAY_SHORT: { [key: string]: string } = {
+  "1": "Pzt",
+  "2": "Sal",
+  "3": "Çar",
+  "4": "Per",
+  "5": "Cum",
+  "6": "Cmt",
+  "0": "Paz",
+};
+
 export function normalizeText(t: string): string {
   return t
     .toLocaleLowerCase("tr-TR")

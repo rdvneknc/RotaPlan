@@ -6,7 +6,6 @@ import {
   clearDailyDistributionAction,
   distributeDailyAllAction,
   fetchDailyDistribution,
-  fetchDistributionDayKeysWithData,
   fetchWeeklyScheduleForDay,
   fetchWorkingVehicleIdsForDay,
   setWorkingVehicleIdsForDayAction,
@@ -103,16 +102,16 @@ function CollapsibleBlock({
 }
 
 export default function DailyListEditor({ schoolId, students, vehicles, sessions, onRefresh }: Props) {
-  const [distributing, setDistributing] = useState<false | "day" | "week">(false);
+  const [distributing, setDistributing] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [distribution, setDistribution] = useState<DailyDistribution | null>(null);
-  const [distDayKeys, setDistDayKeys] = useState<string[]>([]);
   const [todaySchedule, setTodaySchedule] = useState<{ [sessionId: string]: string[] }>({});
   const [workingVehicleIds, setWorkingVehicleIds] = useState<string[]>([]);
   const [savingGroupId, setSavingGroupId] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<VehicleCountSuggestion | null>(null);
   const [suggestionLoading, setSuggestionLoading] = useState(false);
+  const [distributeWarnings, setDistributeWarnings] = useState<string[]>([]);
   const dragRef = useRef<{ groupId: string; studentId: string } | null>(null);
 
   const todayKey = String(new Date().getDay());
@@ -131,16 +130,14 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
   }, [schoolId, todayKey]);
 
   const loadData = useCallback(async () => {
-    const [dist, sched, working, dayKeys] = await Promise.all([
+    const [dist, sched, working] = await Promise.all([
       fetchDailyDistribution(schoolId),
       fetchWeeklyScheduleForDay(schoolId, todayKey),
       fetchWorkingVehicleIdsForDay(schoolId, todayKey),
-      fetchDistributionDayKeysWithData(schoolId),
     ]);
     setDistribution(dist);
     setTodaySchedule(sched);
     setWorkingVehicleIds(working);
-    setDistDayKeys(dayKeys);
   }, [schoolId, todayKey]);
 
   useEffect(() => {
@@ -282,43 +279,30 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
     if (!window.confirm("Bugünün dağıtımı silinecek. Şoför panellerinde bugünkü atamalar kalkacak. Devam edilsin mi?")) return;
     setUndoing(true);
     setMsg(null);
-    await clearDailyDistributionAction(schoolId, "today");
+    await clearDailyDistributionAction(schoolId);
     await loadData();
     onRefresh();
+    setDistributeWarnings([]);
     setMsg({ type: "success", text: "Bugünün dağıtımı geri alındı." });
     setUndoing(false);
     setTimeout(() => setMsg(null), 4000);
   }
 
-  async function handleUndoAllWeek() {
-    if (distDayKeys.length === 0) return;
-    if (!window.confirm("Haftanın tüm günleri için kayıtlı dağıtımlar silinecek. Emin misiniz?")) return;
-    setUndoing(true);
+  async function handleDistribute() {
+    setDistributing(true);
     setMsg(null);
-    await clearDailyDistributionAction(schoolId, "all");
-    await loadData();
-    onRefresh();
-    setMsg({ type: "success", text: "Tüm günlerin dağıtımı temizlendi." });
-    setUndoing(false);
-    setTimeout(() => setMsg(null), 4000);
-  }
-
-  async function handleDistribute(scope: "day" | "week") {
-    setDistributing(scope);
-    setMsg(null);
-    const result = await distributeDailyAllAction(schoolId, scope);
+    setDistributeWarnings([]);
+    const result = await distributeDailyAllAction(schoolId);
     if (result.error) {
       setMsg({ type: "error", text: result.error });
-    } else if (result.scope === "week") {
-      setMsg({
-        type: "success",
-        text: `Haftalık dağıtım tamamlandı. ${result.daysProcessed ?? 0} günde toplam ${result.groupCount ?? 0} grup oluşturuldu.`,
-      });
     } else {
       setMsg({
         type: "success",
         text: `${result.groupCount} grup, toplam ${result.uniqueStudents} öğrenci ${result.vehicleCount} araca dağıtıldı.`,
       });
+      if (result.warnings && result.warnings.length > 0) {
+        setDistributeWarnings(result.warnings);
+      }
     }
     await loadData();
     onRefresh();
@@ -328,7 +312,7 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
 
   if (sessions.length === 0) {
     return (
-      <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
+      <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 sm:p-6">
         <h2 className="text-base font-semibold text-white mb-3">Günlük Dağıtım</h2>
         <p className="text-sm text-gray-500 text-center py-8">
           Önce ders saatleri tanımlayın ve programa öğrenci ekleyin.
@@ -338,15 +322,15 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
   }
 
   return (
-    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
-      <div className="flex items-center justify-between mb-1">
+    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 sm:p-6">
+      <div className="flex items-center justify-between mb-1 gap-2 min-w-0">
         <h2 className="text-base font-semibold text-white">Günlük Dağıtım</h2>
         <span className="inline-flex items-center rounded-full bg-accent/10 px-3 py-1 text-sm font-medium text-accent">
           {todayLabel}
         </span>
       </div>
       <p className="text-sm text-gray-500 mb-4">
-        Sadece bugün veya tüm hafta (Pazartesi–Pazar) için programı araçlara dağıtın. Şoför paneli her zaman yalnızca bugünün dağıtımını gösterir.
+        Bugünün programını seçili araçlara dağıtın. Şoför paneli yalnızca bugünün dağıtımını gösterir.
       </p>
 
       <CollapsibleBlock
@@ -381,7 +365,7 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
           defaultOpen={false}
         >
           <p className="text-xs text-gray-600 mb-3">
-            Sadece işaretlediğiniz araçlara öğrenci dağıtılır. Her gün için ayrı kaydedilir; ilk kez açıyorsanız tümü seçilidir. Haftalık dağıtırken her gün kendi listesi kullanılır.
+            Sadece işaretlediğiniz araçlara öğrenci dağıtılır. Liste gün bazında kaydedilir; ilk kez açıyorsanız tümü seçilidir. Yarın farklı şoförler çalışacaksa o gün geldiğinde listeyi güncelleyip yeniden dağıtın.
           </p>
           <div className="space-y-2">
             {vehicles.map((v) => (
@@ -470,50 +454,26 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
         <div className="flex flex-col gap-2 mb-4">
           <button
             type="button"
-            onClick={() => void handleDistribute("day")}
-            disabled={distributing !== false || undoing || totalStudentsToday === 0 || workingVehicleIds.length === 0}
+            onClick={() => void handleDistribute()}
+            disabled={distributing || undoing || totalStudentsToday === 0 || workingVehicleIds.length === 0}
             className="w-full px-4 py-3 text-sm font-semibold text-dark-900 bg-accent hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {distributing === "day" ? "Dağıtılıyor..." : "Günü Dağıt"}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleDistribute("week")}
-            disabled={distributing !== false || undoing}
-            className="w-full px-4 py-3 text-sm font-semibold text-accent/85 bg-accent/10 hover:bg-accent/18 border border-accent/22 shadow-[inset_0_1px_0_0_rgba(245,183,49,0.07)] disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition flex items-center justify-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            {distributing === "week" ? "Hafta dağıtılıyor..." : "Haftayı Dağıt"}
+            {distributing ? "Dağıtılıyor..." : "Günü Dağıt"}
           </button>
           {hasSavedDistribution && (
             <button
               type="button"
               onClick={handleUndoDistribution}
-              disabled={distributing !== false || undoing}
+              disabled={distributing || undoing}
               className="w-full px-4 py-3 text-sm font-semibold text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition flex items-center justify-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
               </svg>
               {undoing ? "Geri alınıyor..." : "Bugünün dağıtımını geri al"}
-            </button>
-          )}
-          {distDayKeys.length > 0 && (
-            <button
-              type="button"
-              onClick={handleUndoAllWeek}
-              disabled={distributing !== false || undoing}
-              className="w-full px-4 py-3 text-sm font-semibold text-rose-100 bg-rose-950/55 hover:bg-rose-900/60 border border-rose-500/35 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition flex items-center justify-center gap-2"
-            >
-              <svg className="w-5 h-5 shrink-0 opacity-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Tüm haftanın dağıtımını sil ({distDayKeys.length} gün)
             </button>
           )}
         </div>
@@ -526,6 +486,26 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
           msg.type === "error" ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-green-500/10 text-green-400 border border-green-500/20"
         }`}>
           {msg.text}
+        </div>
+      )}
+
+      {distributeWarnings.length > 0 && (
+        <div className="rounded-xl p-3 mb-4 text-sm border border-amber-500/25 bg-amber-500/10 text-amber-100/90">
+          <p className="font-medium text-amber-200 mb-2">Konum uyarıları (dağıtıma yine de dahil edildi)</p>
+          <ul className="list-disc pl-5 space-y-1 text-xs text-amber-100/80">
+            {distributeWarnings.map((w) => (
+              <li key={w} className="leading-relaxed">
+                {w}
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => setDistributeWarnings([])}
+            className="mt-2 text-xs font-medium text-amber-300 hover:text-amber-200"
+          >
+            Uyarıları gizle
+          </button>
         </div>
       )}
 

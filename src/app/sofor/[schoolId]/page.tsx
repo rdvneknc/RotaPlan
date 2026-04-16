@@ -8,13 +8,13 @@ export const dynamic = "force-dynamic";
 
 export default async function DriverIndexPage({ params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
-  const schoolReg = getSchoolById(schoolId);
+  const schoolReg = await getSchoolById(schoolId);
   if (!schoolReg) notFound();
 
   const session = await guardSoforSchoolList(schoolId);
 
-  const vehicles = getVehicles(schoolId);
-  const school = getSchool(schoolId);
+  const vehicles = await getVehicles(schoolId);
+  const school = await getSchool(schoolId);
 
   return (
     <div className="min-h-screen bg-dark-900">
@@ -24,7 +24,7 @@ export default async function DriverIndexPage({ params }: { params: Promise<{ sc
         userEmail={session.email}
         showPasswordLink={session.role !== "driver"}
       />
-      <main className="max-w-2xl mx-auto px-4 py-6">
+      <main className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
         {vehicles.length === 0 ? (
           <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6 text-center">
             <svg className="mx-auto h-12 w-12 mb-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

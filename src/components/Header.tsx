@@ -15,37 +15,37 @@ interface Props {
 export default function Header({ schoolLabel, role, userEmail, showPasswordLink }: Props) {
   const canChangePassword = showPasswordLink ?? role === "admin";
   const containerClass =
-    role === "admin" ? `${ADMIN_PAGE_CONTAINER} py-5` : "max-w-2xl mx-auto px-4 py-5";
+    role === "admin" ? `${ADMIN_PAGE_CONTAINER} py-4 sm:py-5` : "max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-5";
 
   return (
     <header className="bg-dark-800 border-b border-dark-500">
       <div className={containerClass}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
-              <svg className="w-6 h-6 text-dark-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <div className="flex items-start sm:items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-accent flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 sm:w-6 sm:h-6 text-dark-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
               </svg>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-white leading-none">RotaPlan</h1>
-              <p className="text-xs text-gray-500 mt-0.5">
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-white leading-none">RotaPlan</h1>
+              <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5">
                 {role === "admin" ? "Admin Paneli" : "Şoför Paneli"}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-xs text-gray-500">Okul</p>
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            <div className="text-right min-w-0 max-w-[42vw] sm:max-w-none">
+              <p className="text-[10px] sm:text-xs text-gray-500">Okul</p>
               <p
-                className={`text-sm font-medium text-gray-300 truncate ${
-                  role === "admin" ? "max-w-[160px] sm:max-w-[220px] md:max-w-xs lg:max-w-sm" : "max-w-[160px]"
+                className={`text-xs sm:text-sm font-medium text-gray-300 truncate ${
+                  role === "admin" ? "sm:max-w-[220px] md:max-w-xs lg:max-w-sm" : ""
                 }`}
               >
                 {schoolLabel}
               </p>
               {userEmail && (
-                <p className="text-[10px] text-gray-600 truncate max-w-[160px]">{userEmail}</p>
+                <p className="text-[10px] text-gray-600 truncate max-w-full">{userEmail}</p>
               )}
             </div>
             {userEmail ? (

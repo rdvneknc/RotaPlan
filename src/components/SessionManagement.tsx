@@ -78,13 +78,14 @@ export default function SessionManagement({ schoolId, sessions, onRefresh }: Pro
   }
 
   return (
-    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
         <h2 className="text-base font-semibold text-white">Ders Saatleri</h2>
         {!showForm && (
           <button
+            type="button"
             onClick={() => { resetForm(); setShowForm(true); }}
-            className="px-4 py-2 text-sm font-medium text-dark-900 bg-accent hover:bg-accent-hover rounded-xl transition"
+            className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-dark-900 bg-accent hover:bg-accent-hover rounded-xl transition"
           >
             + Ders Saati Ekle
           </button>
@@ -92,7 +93,7 @@ export default function SessionManagement({ schoolId, sessions, onRefresh }: Pro
       </div>
 
       {/* Ders süresi ayarı */}
-      <div className="mb-5 p-3 bg-dark-700 rounded-xl border border-dark-400 flex items-center justify-between gap-3">
+      <div className="mb-5 p-3 bg-dark-700 rounded-xl border border-dark-400 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-medium text-gray-300">Ders Süresi</p>
           <p className="text-xs text-gray-600">Çıkış saati = ders başlangıcı + bu süre</p>
@@ -113,7 +114,7 @@ export default function SessionManagement({ schoolId, sessions, onRefresh }: Pro
 
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 p-4 bg-dark-700 rounded-xl border border-dark-400 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-1">Etiket</label>
               <input
@@ -167,9 +168,9 @@ export default function SessionManagement({ schoolId, sessions, onRefresh }: Pro
           {sessions.map((session) => (
             <div
               key={session.id}
-              className="flex items-center justify-between bg-dark-700 border border-dark-500 rounded-xl p-4"
+              className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-dark-700 border border-dark-500 rounded-xl p-4"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-accent/10 text-accent">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -182,7 +183,7 @@ export default function SessionManagement({ schoolId, sessions, onRefresh }: Pro
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
                 <button
                   onClick={() => startEdit(session)}
                   className="p-2 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition"

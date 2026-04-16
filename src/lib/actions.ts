@@ -32,15 +32,14 @@ import {
   getCurrentSession,
   getWeeklySchedule,
   setWeeklyScheduleDay,
+  replaceWeeklySchedule,
   getWeeklyScheduleForDay,
   getWorkingVehicleIdsForDay,
   setWorkingVehicleIdsForDay as storeSetWorkingVehicleIdsForDay,
   isVehicleWorkingToday,
   distributeDailyAll as storeDistributeDailyAll,
   getDailyDistribution,
-  getDistributionDayKeysWithData,
   clearDailyDistributionToday as storeClearDailyDistributionToday,
-  clearAllDistributions as storeClearAllDistributions,
   updateDailyDistributionGroup,
   getGroupDistribution,
   generateRouteLinkForGroup,
@@ -61,13 +60,20 @@ import {
   getUserByEmail,
   getUserById as storeGetUserById,
   createUser as storeCreateUser,
+  registerUserFromFirebaseAuth,
   validateUser,
   changeUserPassword,
   setUserPassword as storeSetUserPassword,
   deleteUser as storeDeleteUser,
 } from "./store";
 import { parseMapsUrl } from "./parse-maps-url";
-import { parseSpreadsheetIdFromInput, isGoogleSheetsConfigured, writeWeeklyProgramGrid, readWeeklyProgramGrid } from "./google-sheets";
+import {
+  parseSpreadsheetIdFromInput,
+  isGoogleSheetsConfigured,
+  writeWeeklyProgramGrid,
+  readWeeklyProgramGrid,
+  formatGoogleSheetsUserError,
+} from "./google-sheets";
 import { buildWeeklyProgramGridWithMeta } from "./weekly-program-grid";
 import { parseGridSheetRows, DAYS } from "./weekly-program-shared";
 import { RouteMode } from "./types";
@@ -80,17 +86,20 @@ import {
   completePasswordResetWithToken,
   validatePasswordResetToken,
 } from "./password-reset";
+import { getAdminAuth } from "./firebase/admin-app";
+import { isFirebaseEmailAuthEnabled } from "./firebase/auth-mode";
+import { updateFirebaseUserPasswordIfExists } from "./firebase/server-auth";
 
 // ---------------------------------------------------------------------------
 // Super-admin: School management
 // ---------------------------------------------------------------------------
 
 export async function fetchSchools() {
-  return getSchools();
+  return await getSchools();
 }
 
 export async function fetchSchoolById(id: string) {
-  return getSchoolById(id);
+  return await getSchoolById(id);
 }
 
 export async function createSchool(formData: FormData) {
@@ -116,7 +125,7 @@ export async function createSchool(formData: FormData) {
     googleSheetId = sid;
   }
 
-  const school = storeAddSchool({
+  const school = await storeAddSchool({
     name,
     label,
     lat: parsed.coords.lat,
@@ -138,12 +147,27 @@ export async function createSchool(formData: FormData) {
     if (panelLoginPassword.length < 4) {
       return { error: "Panel şifresi en az 4 karakter olmalıdır." };
     }
-    const u = storeCreateUser({
-      email: panelLoginEmail,
-      password: panelLoginPassword,
-      schoolId: school.id,
-      role: "admin",
-    });
+    let u: Awaited<ReturnType<typeof storeCreateUser>>;
+    if (isFirebaseEmailAuthEnabled()) {
+      const rec = await getAdminAuth().createUser({
+        email: panelLoginEmail,
+        password: panelLoginPassword,
+        emailVerified: false,
+      });
+      u = await registerUserFromFirebaseAuth({
+        uid: rec.uid,
+        email: panelLoginEmail,
+        schoolId: school.id,
+        role: "admin",
+      });
+    } else {
+      u = await storeCreateUser({
+        email: panelLoginEmail,
+        password: panelLoginPassword,
+        schoolId: school.id,
+        role: "admin",
+      });
+    }
     if ("error" in u) {
       return {
         error: `Okul oluşturuldu (id: ${school.id}) ancak panel kullanıcısı eklenemedi: ${u.error}. Süper admin panelinden «Admin Ekle» ile kullanıcıyı ekleyin.`,
@@ -183,7 +207,7 @@ export async function editSchoolAction(formData: FormData) {
     }
   }
 
-  const result = storeUpdateSchoolRegistry(id, {
+  const result = await storeUpdateSchoolRegistry(id, {
     name,
     label,
     lat: parsed.coords.lat,
@@ -202,17 +226,19 @@ export async function editSchoolAction(formData: FormData) {
 
 export async function removeSchool(formData: FormData) {
   const id = formData.get("id") as string;
-  storeDeleteSchool(id);
+  await storeDeleteSchool(id);
   revalidatePath("/super-admin");
   return { success: true };
 }
 
 export async function fetchAllSchoolStats() {
-  const schools = getSchools();
-  return schools.map((s) => ({
-    school: s,
-    stats: getSchoolStats(s.id),
-  }));
+  const schools = await getSchools();
+  return Promise.all(
+    schools.map(async (s) => ({
+      school: s,
+      stats: await getSchoolStats(s.id),
+    })),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -220,11 +246,11 @@ export async function fetchAllSchoolStats() {
 // ---------------------------------------------------------------------------
 
 export async function fetchStudents(schoolId: string) {
-  return getStudents(schoolId);
+  return await getStudents(schoolId);
 }
 
 export async function fetchStudentsByVehicle(schoolId: string, vehicleId: string) {
-  return getStudentsByVehicle(schoolId, vehicleId);
+  return await getStudentsByVehicle(schoolId, vehicleId);
 }
 
 export async function createStudent(schoolId: string, formData: FormData) {
@@ -248,7 +274,7 @@ export async function createStudent(schoolId: string, formData: FormData) {
   const contact2Name = (formData.get("contact2Name") as string)?.trim() || "";
   const contact2Phone = (formData.get("contact2Phone") as string)?.trim() || "";
 
-  addStudent(schoolId, {
+  await addStudent(schoolId, {
     name,
     label,
     lat: parsed.coords.lat,
@@ -288,7 +314,7 @@ export async function editStudent(schoolId: string, formData: FormData) {
   const contact2Name = (formData.get("contact2Name") as string)?.trim() || "";
   const contact2Phone = (formData.get("contact2Phone") as string)?.trim() || "";
 
-  const result = updateStudent(schoolId, id, {
+  const result = await updateStudent(schoolId, id, {
     name,
     label,
     lat: parsed.coords.lat,
@@ -310,30 +336,30 @@ export async function editStudent(schoolId: string, formData: FormData) {
 
 export async function removeStudent(schoolId: string, formData: FormData) {
   const id = formData.get("id") as string;
-  deleteStudent(schoolId, id);
+  await deleteStudent(schoolId, id);
   revalidatePath("/");
   return { success: true };
 }
 
 export async function toggleActive(schoolId: string, formData: FormData) {
   const id = formData.get("id") as string;
-  toggleStudentActive(schoolId, id);
+  await toggleStudentActive(schoolId, id);
   revalidatePath("/");
   return { success: true };
 }
 
 export async function setAllActive(schoolId: string, active: boolean, vehicleId?: string) {
   if (vehicleId) {
-    setAllStudentsActiveByVehicle(schoolId, vehicleId, active);
+    await setAllStudentsActiveByVehicle(schoolId, vehicleId, active);
   } else {
-    setAllStudentsActive(schoolId, active);
+    await setAllStudentsActive(schoolId, active);
   }
   revalidatePath("/");
   return { success: true };
 }
 
 export async function assignVehicle(schoolId: string, studentId: string, vehicleId: string | null) {
-  assignStudentToVehicle(schoolId, studentId, vehicleId);
+  await assignStudentToVehicle(schoolId, studentId, vehicleId);
   revalidatePath("/");
   return { success: true };
 }
@@ -341,7 +367,7 @@ export async function assignVehicle(schoolId: string, studentId: string, vehicle
 export async function moveStudent(schoolId: string, formData: FormData) {
   const id = formData.get("id") as string;
   const direction = formData.get("direction") as "up" | "down";
-  reorderStudent(schoolId, id, direction);
+  await reorderStudent(schoolId, id, direction);
   revalidatePath("/");
   return { success: true };
 }
@@ -351,7 +377,7 @@ export async function moveStudent(schoolId: string, formData: FormData) {
 // ---------------------------------------------------------------------------
 
 export async function fetchSchool(schoolId: string) {
-  return getSchool(schoolId);
+  return await getSchool(schoolId);
 }
 
 export async function saveSchool(schoolId: string, formData: FormData) {
@@ -367,7 +393,7 @@ export async function saveSchool(schoolId: string, formData: FormData) {
     return { error: parsed.error };
   }
 
-  updateSchool(schoolId, {
+  await updateSchool(schoolId, {
     label,
     lat: parsed.coords.lat,
     lng: parsed.coords.lng,
@@ -383,11 +409,11 @@ export async function saveSchool(schoolId: string, formData: FormData) {
 // ---------------------------------------------------------------------------
 
 export async function fetchVehicles(schoolId: string) {
-  return getVehicles(schoolId);
+  return await getVehicles(schoolId);
 }
 
 export async function fetchVehicleBySlug(schoolId: string, slug: string) {
-  return getVehicleBySlug(schoolId, slug);
+  return await getVehicleBySlug(schoolId, slug);
 }
 
 export async function createVehicle(schoolId: string, formData: FormData) {
@@ -414,11 +440,11 @@ export async function createVehicle(schoolId: string, formData: FormData) {
       error: "Şoför kullanıcı adı 3–40 karakter olmalı; yalnızca küçük harf, rakam, . _ -",
     };
   }
-  if (isDriverLoginUsernameTaken(loginUsername)) {
+  if (await isDriverLoginUsernameTaken(loginUsername)) {
     return { error: "Bu kullanıcı adı başka bir araçta kullanılıyor." };
   }
 
-  const vehicle = addVehicle(schoolId, { driverName, plate, capacity, loginUsername });
+  const vehicle = await addVehicle(schoolId, { driverName, plate, capacity, loginUsername });
   revalidatePath("/");
   return { success: true, vehicle };
 }
@@ -442,7 +468,7 @@ export async function editVehicle(schoolId: string, formData: FormData) {
     return { error: "Kapasite geçerli bir sayı olmalıdır." };
   }
 
-  const existing = getVehicleById(schoolId, id);
+  const existing = await getVehicleById(schoolId, id);
   if (!existing) return { error: "Araç bulunamadı." };
 
   const userNorm = normalizeDriverUsername(loginUsername);
@@ -451,11 +477,11 @@ export async function editVehicle(schoolId: string, formData: FormData) {
       error: "Şoför kullanıcı adı 3–40 karakter olmalı; yalnızca küçük harf, rakam, . _ -",
     };
   }
-  if (isDriverLoginUsernameTaken(loginUsername, { schoolId, vehicleId: id })) {
+  if (await isDriverLoginUsernameTaken(loginUsername, { schoolId, vehicleId: id })) {
     return { error: "Bu kullanıcı adı başka bir araçta kullanılıyor." };
   }
 
-  const result = updateVehicle(schoolId, id, {
+  const result = await updateVehicle(schoolId, id, {
     driverName,
     plate,
     capacity,
@@ -471,7 +497,7 @@ export async function removeVehicle(schoolId: string, formData: FormData) {
   const gate = await requireSchoolEditor(schoolId);
   if (gate.error) return { error: gate.error };
   const id = formData.get("id") as string;
-  deleteVehicle(schoolId, id);
+  await deleteVehicle(schoolId, id);
   revalidatePath("/");
   return { success: true };
 }
@@ -481,34 +507,34 @@ export async function removeVehicle(schoolId: string, formData: FormData) {
 // ---------------------------------------------------------------------------
 
 export async function fetchSessions(schoolId: string) {
-  return getSessions(schoolId);
+  return await getSessions(schoolId);
 }
 
 export async function fetchCurrentSession(schoolId: string) {
-  return getCurrentSession(schoolId);
+  return await getCurrentSession(schoolId);
 }
 
 export async function createSession(schoolId: string, input: { label: string; time: string; studentIds: string[] }) {
-  const session = storeAddSession(schoolId, input);
+  const session = await storeAddSession(schoolId, input);
   revalidatePath("/");
   return { success: true, session };
 }
 
 export async function editSession(schoolId: string, id: string, updates: { label?: string; time?: string; studentIds?: string[] }) {
-  const result = storeUpdateSession(schoolId, id, updates);
+  const result = await storeUpdateSession(schoolId, id, updates);
   if (!result) return { error: "Seans bulunamadı." };
   revalidatePath("/");
   return { success: true };
 }
 
 export async function removeSession(schoolId: string, id: string) {
-  storeDeleteSession(schoolId, id);
+  await storeDeleteSession(schoolId, id);
   revalidatePath("/");
   return { success: true };
 }
 
 export async function activateSession(schoolId: string, sessionId: string) {
-  const result = storeLoadSession(schoolId, sessionId);
+  const result = await storeLoadSession(schoolId, sessionId);
   revalidatePath("/");
   return result;
 }
@@ -518,15 +544,15 @@ export async function activateSession(schoolId: string, sessionId: string) {
 // ---------------------------------------------------------------------------
 
 export async function fetchWeeklySchedule(schoolId: string) {
-  return getWeeklySchedule(schoolId);
+  return await getWeeklySchedule(schoolId);
 }
 
 export async function fetchWeeklyScheduleForDay(schoolId: string, day: string) {
-  return getWeeklyScheduleForDay(schoolId, day);
+  return await getWeeklyScheduleForDay(schoolId, day);
 }
 
 export async function updateWeeklyScheduleDay(schoolId: string, day: string, sessionId: string, studentIds: string[]) {
-  setWeeklyScheduleDay(schoolId, day, sessionId, studentIds);
+  await setWeeklyScheduleDay(schoolId, day, sessionId, studentIds);
   revalidatePath("/");
   return { success: true };
 }
@@ -570,7 +596,7 @@ export async function saveSchoolGoogleSheetLink(schoolId: string, formData: Form
     googleSheetId = undefined;
   }
 
-  const school = storeUpdateSchoolRegistry(schoolId, { googleSheetId });
+  const school = await storeUpdateSchoolRegistry(schoolId, { googleSheetId });
   if (!school) return { error: "Okul bulunamadı." };
   revalidatePath("/super-admin");
   revalidatePath(`/admin/${schoolId}`);
@@ -585,20 +611,19 @@ export async function pushWeeklyProgramToGoogleSheets(schoolId: string) {
     return { error: "Sunucuda GOOGLE_SERVICE_ACCOUNT_JSON tanımlı değil." };
   }
 
-  const reg = getSchoolById(schoolId);
+  const reg = await getSchoolById(schoolId);
   if (!reg?.googleSheetId) {
     return { error: "Önce bu okul için Google Sheets bağlantısını kaydedin." };
   }
 
   try {
-    const layout = buildWeeklyProgramGridWithMeta(schoolId);
+    const layout = await buildWeeklyProgramGridWithMeta(schoolId);
     await writeWeeklyProgramGrid(reg.googleSheetId, layout.rows, {
       rowKinds: layout.rowKinds,
       colCount: layout.colCount,
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Google Sheets’e yazılamadı.";
-    return { error: msg };
+    return { error: formatGoogleSheetsUserError(e) || "Google Sheets’e yazılamadı." };
   }
 
   revalidatePath(`/admin/${schoolId}/program`);
@@ -612,7 +637,7 @@ export async function pullWeeklyProgramFromGoogleSheets(schoolId: string) {
     return { error: "Sunucuda GOOGLE_SERVICE_ACCOUNT_JSON tanımlı değil." };
   }
 
-  const reg = getSchoolById(schoolId);
+  const reg = await getSchoolById(schoolId);
   if (!reg?.googleSheetId) {
     return { error: "Önce bu okul için Google Sheets bağlantısını kaydedin." };
   }
@@ -621,12 +646,11 @@ export async function pullWeeklyProgramFromGoogleSheets(schoolId: string) {
   try {
     rows = await readWeeklyProgramGrid(reg.googleSheetId);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Google Sheets okunamadı.";
-    return { error: msg };
+    return { error: formatGoogleSheetsUserError(e) || "Google Sheets okunamadı." };
   }
 
-  const sessions = getSessions(schoolId);
-  const students = getStudents(schoolId);
+  const sessions = await getSessions(schoolId);
+  const students = await getStudents(schoolId);
   const { parsed, warnings } = parseGridSheetRows(rows, sessions, students);
 
   if (Object.keys(parsed).length === 0) {
@@ -637,13 +661,15 @@ export async function pullWeeklyProgramFromGoogleSheets(schoolId: string) {
     };
   }
 
+  const nextSchedule: { [day: string]: { [sessionId: string]: string[] } } = {};
   for (const day of DAYS) {
+    nextSchedule[day] = {};
     const dayData = parsed[day] ?? {};
     for (const session of sessions) {
-      const ids = dayData[session.id] ?? [];
-      setWeeklyScheduleDay(schoolId, day, session.id, ids);
+      nextSchedule[day][session.id] = dayData[session.id] ?? [];
     }
   }
+  await replaceWeeklySchedule(schoolId, nextSchedule);
 
   revalidatePath("/");
   revalidatePath(`/admin/${schoolId}/program`);
@@ -655,11 +681,11 @@ export async function pullWeeklyProgramFromGoogleSheets(schoolId: string) {
 // ---------------------------------------------------------------------------
 
 export async function fetchWorkingVehicleIdsForDay(schoolId: string, dayKey: string) {
-  return getWorkingVehicleIdsForDay(schoolId, dayKey);
+  return await getWorkingVehicleIdsForDay(schoolId, dayKey);
 }
 
 export async function setWorkingVehicleIdsForDayAction(schoolId: string, dayKey: string, vehicleIds: string[]) {
-  const result = storeSetWorkingVehicleIdsForDay(schoolId, dayKey, vehicleIds);
+  const result = await storeSetWorkingVehicleIdsForDay(schoolId, dayKey, vehicleIds);
   revalidatePath("/");
   revalidatePath("/admin");
   revalidatePath("/sofor", "layout");
@@ -669,21 +695,21 @@ export async function setWorkingVehicleIdsForDayAction(schoolId: string, dayKey:
 export async function fetchVehicleWorkingToday(schoolId: string, vehicleId: string) {
   const g = await assertDriverOrAdminVehicle(schoolId, vehicleId);
   if (g.error) return false;
-  return isVehicleWorkingToday(schoolId, vehicleId);
+  return await isVehicleWorkingToday(schoolId, vehicleId);
 }
 
 // ---------------------------------------------------------------------------
 // Daily Full Distribution
 // ---------------------------------------------------------------------------
 
-export async function distributeDailyAllAction(schoolId: string, scope: "day" | "week") {
-  const result = storeDistributeDailyAll(schoolId, scope);
+export async function distributeDailyAllAction(schoolId: string) {
+  const result = await storeDistributeDailyAll(schoolId);
   revalidatePath("/");
   return result;
 }
 
 export async function fetchVehicleCountSuggestion(schoolId: string, dayKey: string) {
-  return getVehicleCountSuggestionForDay(schoolId, dayKey);
+  return await getVehicleCountSuggestionForDay(schoolId, dayKey);
 }
 
 export async function fetchDailyDistribution(schoolId: string, forVehicleId?: string) {
@@ -694,16 +720,11 @@ export async function fetchDailyDistribution(schoolId: string, forVehicleId?: st
     const gate = await requireSchoolEditor(schoolId);
     if (gate.error) return null;
   }
-  return getDailyDistribution(schoolId);
+  return await getDailyDistribution(schoolId);
 }
 
-export async function fetchDistributionDayKeysWithData(schoolId: string) {
-  return getDistributionDayKeysWithData(schoolId);
-}
-
-export async function clearDailyDistributionAction(schoolId: string, scope: "today" | "all" = "today") {
-  if (scope === "all") storeClearAllDistributions(schoolId);
-  else storeClearDailyDistributionToday(schoolId);
+export async function clearDailyDistributionAction(schoolId: string) {
+  await storeClearDailyDistributionToday(schoolId);
   revalidatePath("/");
   revalidatePath("/admin");
   revalidatePath("/sofor", "layout");
@@ -715,7 +736,7 @@ export async function updateDailyDistributionGroupAction(
   groupId: string,
   assignments: SessionDistributionAssignment[]
 ) {
-  const result = updateDailyDistributionGroup(schoolId, groupId, assignments);
+  const result = await updateDailyDistributionGroup(schoolId, groupId, assignments);
   revalidatePath("/");
   revalidatePath("/admin");
   revalidatePath("/sofor", "layout");
@@ -725,7 +746,7 @@ export async function updateDailyDistributionGroupAction(
 export async function fetchGroupDistribution(schoolId: string, groupId: string, vehicleId: string) {
   const g = await assertDriverOrAdminVehicle(schoolId, vehicleId);
   if (g.error) return [];
-  return getGroupDistribution(schoolId, groupId, vehicleId);
+  return await getGroupDistribution(schoolId, groupId, vehicleId);
 }
 
 export async function getRouteLinkForGroup(
@@ -736,15 +757,15 @@ export async function getRouteLinkForGroup(
 ) {
   const g = await assertDriverOrAdminVehicle(schoolId, vehicleId);
   if (g.error) return "";
-  return generateRouteLinkForGroup(schoolId, groupId, vehicleId, excludeStudentIds) ?? "";
+  return (await generateRouteLinkForGroup(schoolId, groupId, vehicleId, excludeStudentIds)) ?? "";
 }
 
 export async function fetchClassDuration(schoolId: string) {
-  return getClassDuration(schoolId);
+  return await getClassDuration(schoolId);
 }
 
 export async function updateClassDuration(schoolId: string, minutes: number) {
-  storeSetClassDuration(schoolId, minutes);
+  await storeSetClassDuration(schoolId, minutes);
   revalidatePath("/");
   return { success: true };
 }
@@ -754,7 +775,7 @@ export async function updateClassDuration(schoolId: string, minutes: number) {
 // ---------------------------------------------------------------------------
 
 export async function autoDistribute(schoolId: string) {
-  const result = autoDistributeStudents(schoolId);
+  const result = await autoDistributeStudents(schoolId);
   revalidatePath("/");
   return result;
 }
@@ -764,7 +785,7 @@ export async function autoDistribute(schoolId: string) {
 // ---------------------------------------------------------------------------
 
 export async function getRouteLink(schoolId: string, mode: RouteMode, vehicleId?: string) {
-  return generateRouteLink(schoolId, mode, vehicleId);
+  return await generateRouteLink(schoolId, mode, vehicleId);
 }
 
 // ---------------------------------------------------------------------------
@@ -779,7 +800,7 @@ export async function loginAction(formData: FormData) {
     return { error: "E-posta ve şifre zorunludur." };
   }
 
-  const user = validateUser(email, password);
+  const user = await validateUser(email, password);
   if (!user) {
     return { error: "E-posta veya şifre hatalı." };
   }
@@ -799,6 +820,48 @@ export async function loginAction(formData: FormData) {
   redirect("/");
 }
 
+/** İstemci `signInWithEmailAndPassword` sonrası ID token ile çağrılır. */
+export async function finalizeFirebaseAdminLoginAction(idToken: string) {
+  if (!isFirebaseEmailAuthEnabled()) {
+    return { error: "Firebase girişi yapılandırılmamış." };
+  }
+  if (!idToken?.trim()) return { error: "Oturum doğrulanamadı." };
+
+  let decoded: { uid: string; email?: string };
+  try {
+    decoded = await getAdminAuth().verifyIdToken(idToken);
+  } catch {
+    return { error: "Oturum jetonu geçersiz veya süresi dolmuş." };
+  }
+
+  const email = decoded.email?.toLowerCase().trim();
+  if (!email) return { error: "E-posta talep üzerinde yok; Firebase konsolunda e-posta ile oturum açıldığından emin olun." };
+
+  const user = await getUserByEmail(email);
+  if (!user) {
+    return { error: "Bu e-posta panelde kayıtlı değil. Süper admin kullanıcı eklemelidir." };
+  }
+  if (user.id !== decoded.uid) {
+    return {
+      error:
+        "Firebase hesabı panel kaydıyla uyuşmuyor. Kullanıcıyı Firebase açıkken yeniden oluşturun veya yöneticiye başvurun.",
+    };
+  }
+
+  await createAuthSession({
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    schoolId: user.schoolId,
+    mustChangePassword: user.mustChangePassword,
+  });
+
+  if (user.mustChangePassword) redirect("/sifre-degistir");
+  if (user.role === "superadmin") redirect("/super-admin");
+  if (user.schoolId) redirect(`/admin/${user.schoolId}`);
+  redirect("/");
+}
+
 export async function driverLoginAction(formData: FormData) {
   const username = (formData.get("username") as string)?.trim() || "";
 
@@ -806,7 +869,7 @@ export async function driverLoginAction(formData: FormData) {
     return { error: "Kullanıcı adı zorunludur." };
   }
 
-  const found = resolveDriverByUsername(username);
+  const found = await resolveDriverByUsername(username);
   if (!found) {
     return { error: "Bu kullanıcı adı ile kayıtlı araç yok veya giriş henüz tanımlanmamış." };
   }
@@ -856,7 +919,18 @@ export async function createUserAction(formData: FormData) {
     return { error: "Şifre en az 4 karakter olmalıdır." };
   }
 
-  const result = storeCreateUser({ email, password, schoolId, role });
+  let result: Awaited<ReturnType<typeof storeCreateUser>>;
+  if (isFirebaseEmailAuthEnabled()) {
+    const rec = await getAdminAuth().createUser({ email, password, emailVerified: false });
+    result = await registerUserFromFirebaseAuth({
+      uid: rec.uid,
+      email,
+      schoolId,
+      role,
+    });
+  } else {
+    result = await storeCreateUser({ email, password, schoolId, role });
+  }
   if ("error" in result) {
     return { error: result.error };
   }
@@ -867,7 +941,14 @@ export async function createUserAction(formData: FormData) {
 
 export async function deleteUserAction(formData: FormData) {
   const id = formData.get("id") as string;
-  storeDeleteUser(id);
+  if (isFirebaseEmailAuthEnabled()) {
+    try {
+      await getAdminAuth().deleteUser(id);
+    } catch {
+      /* yoksa yine de kayıt silinsin */
+    }
+  }
+  await storeDeleteUser(id);
   revalidatePath("/super-admin");
   return { success: true };
 }
@@ -890,23 +971,24 @@ export async function superAdminResetPasswordAction(formData: FormData) {
     return { error: "Şifreler eşleşmiyor." };
   }
 
-  const target = storeGetUserById(userId);
+  const target = await storeGetUserById(userId);
   if (!target) return { error: "Kullanıcı bulunamadı." };
   if (target.id === session.userId) {
     return { error: "Kendi şifrenizi buradan değiştiremezsiniz; /sifre-degistir sayfasını kullanın." };
   }
 
-  storeSetUserPassword(userId, newPassword, true);
+  await storeSetUserPassword(userId, newPassword, true);
+  await updateFirebaseUserPasswordIfExists(userId, newPassword);
   revalidatePath("/super-admin");
   return { success: true };
 }
 
 export async function fetchUsersBySchool(schoolId: string) {
-  return getUsersBySchool(schoolId);
+  return await getUsersBySchool(schoolId);
 }
 
 export async function fetchAllUsers() {
-  return getUsers().map((u) => ({
+  return (await getUsers()).map((u) => ({
     id: u.id,
     email: u.email,
     role: u.role,
@@ -928,7 +1010,7 @@ export async function changePasswordAction(formData: FormData) {
   }
 
   if (!session.mustChangePassword) {
-    const user = validateUser(session.email, currentPassword);
+    const user = await validateUser(session.email, currentPassword);
     if (!user) {
       return { error: "Mevcut şifre hatalı." };
     }
@@ -941,8 +1023,10 @@ export async function changePasswordAction(formData: FormData) {
     };
   }
 
-  const ok = changeUserPassword(session.userId, newPassword);
+  const ok = await changeUserPassword(session.userId, newPassword);
   if (!ok) return { error: "Kullanıcı bulunamadı." };
+
+  await updateFirebaseUserPasswordIfExists(session.userId, newPassword);
 
   await updateSession({ mustChangePassword: false });
   return { success: true };
@@ -981,9 +1065,9 @@ export async function completeAdminPasswordResetAction(formData: FormData) {
   const confirmPassword = ((formData.get("confirmPassword") as string) || "").trim();
   if (!token) return { error: "Geçersiz sıfırlama bağlantısı." };
   if (newPassword !== confirmPassword) return { error: "Şifreler eşleşmiyor." };
-  return completePasswordResetWithToken(token, newPassword);
+  return await completePasswordResetWithToken(token, newPassword);
 }
 
 export async function checkAdminPasswordResetTokenAction(token: string) {
-  return validatePasswordResetToken((token || "").trim());
+  return await validatePasswordResetToken((token || "").trim());
 }

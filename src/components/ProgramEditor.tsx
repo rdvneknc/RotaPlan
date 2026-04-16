@@ -10,7 +10,8 @@ import {
   pushWeeklyProgramToGoogleSheets,
   pullWeeklyProgramFromGoogleSheets,
 } from "@/lib/actions";
-import { DAY_LABELS, DAYS } from "@/lib/weekly-program-shared";
+import { DAY_LABELS, DAY_SHORT, DAYS } from "@/lib/weekly-program-shared";
+import { studentMapOpenUrl } from "@/lib/parse-maps-url";
 
 function StudentSearchDropdown({
   available,
@@ -41,7 +42,7 @@ function StudentSearchDropdown({
   return (
     <div ref={ref} className="relative">
       <div
-        className="flex items-center rounded-lg border border-dark-400 bg-dark-700 overflow-hidden min-w-[260px] cursor-text"
+        className="flex items-center rounded-lg border border-dark-400 bg-dark-700 overflow-hidden w-full min-w-0 sm:min-w-[260px] cursor-text"
         onClick={() => setOpen(true)}
       >
         <svg className="w-4 h-4 text-gray-500 ml-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -57,7 +58,7 @@ function StudentSearchDropdown({
         />
       </div>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-full min-w-[300px] bg-dark-700 border border-dark-400 rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto">
+        <div className="absolute left-0 right-0 sm:left-auto sm:right-0 top-full mt-1 w-full sm:min-w-[280px] bg-dark-700 border border-dark-400 rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="text-sm text-gray-600 p-3 text-center">
               {query ? "Sonuç bulunamadı" : "Tüm öğrenciler ekli"}
@@ -263,11 +264,11 @@ export default function ProgramEditor({
   const todayIndex = new Date().getDay();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Haftalık Program</h1>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Haftalık Program</h1>
           <p className="text-sm text-gray-500 mt-1">Her gün için seansları ve öğrencileri düzenleyin</p>
           {!googleSheetId && (
             <p className="text-xs text-gray-600 mt-2">
@@ -275,7 +276,7 @@ export default function ProgramEditor({
             </p>
           )}
         </div>
-        <div className="flex gap-2 flex-wrap justify-end">
+        <div className="flex gap-2 flex-wrap lg:justify-end lg:shrink-0">
           {googleSheetId ? (
             <>
               <button
@@ -341,32 +342,36 @@ export default function ProgramEditor({
         </div>
       </div>
 
-      {/* Day tabs */}
-      <div className="flex bg-dark-800 rounded-xl border border-dark-500 p-1.5 gap-1">
+      {/* Day tabs — mobilde kaydırılabilir */}
+      <div className="flex overflow-x-auto overscroll-x-contain snap-x snap-mandatory gap-1 p-1.5 bg-dark-800 rounded-xl border border-dark-500 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
         {DAYS.map((day) => (
           <button
             key={day}
+            type="button"
             onClick={() => { setSelectedDay(day); setMsg(null); }}
-            className={`flex-1 py-3 text-sm font-medium rounded-lg transition ${
+            className={`shrink-0 snap-start min-w-[4.5rem] sm:min-w-0 sm:flex-1 py-2.5 sm:py-3 px-1 text-xs sm:text-sm font-medium rounded-lg transition ${
               selectedDay === day
                 ? "bg-accent text-dark-900"
                 : "text-gray-400 hover:text-white hover:bg-dark-700"
             } ${String(todayIndex) === day && selectedDay !== day ? "ring-1 ring-accent/30" : ""}`}
           >
-            {DAY_LABELS[day]}
+            <span className="hidden sm:inline">{DAY_LABELS[day]}</span>
+            <span className="sm:hidden">{DAY_SHORT[day]}</span>
             {String(todayIndex) === day && (
-              <span className="ml-1.5 text-[10px] opacity-60">bugün</span>
+              <span className="block sm:inline sm:ml-1.5 text-[9px] sm:text-[10px] opacity-60 leading-tight">bugün</span>
             )}
           </button>
         ))}
       </div>
 
       {msg && (
-        <div className={`rounded-xl p-3 text-sm text-center ${
-          msg.type === "success"
-            ? "bg-green-500/10 text-green-400 border border-green-500/20"
-            : "bg-red-500/10 text-red-400 border border-red-500/20"
-        }`}>
+        <div
+          className={`rounded-xl p-3 text-sm ${
+            msg.type === "success"
+              ? "text-center bg-green-500/10 text-green-400 border border-green-500/20"
+              : "text-left whitespace-pre-line sm:max-w-3xl mx-auto bg-red-500/10 text-red-400 border border-red-500/20"
+          }`}
+        >
           {msg.text}
         </div>
       )}
@@ -385,27 +390,29 @@ export default function ProgramEditor({
             return (
               <div key={session.id} className="bg-dark-800 rounded-2xl border border-dark-500 overflow-hidden">
                 {/* Session header */}
-                <div className="px-5 py-3 flex items-center justify-between border-b bg-accent/5 border-accent/10">
-                  <div className="flex items-center gap-3">
-                    <div className="px-3 py-1 rounded-lg text-sm font-bold bg-accent/15 text-accent">
+                <div className="px-3 sm:px-5 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b bg-accent/5 border-accent/10">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
+                    <div className="px-3 py-1 rounded-lg text-sm font-bold bg-accent/15 text-accent shrink-0">
                       {session.time}
                     </div>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-gray-500 min-w-0">
                       {session.label} • {sessionStudents.length} öğrenci
                     </span>
                   </div>
                   {available.length > 0 && (
-                    <StudentSearchDropdown
-                      available={available}
-                      onSelect={(id) => addStudentToSession(session.id, id)}
-                    />
+                    <div className="w-full sm:w-auto sm:max-w-md sm:shrink-0">
+                      <StudentSearchDropdown
+                        available={available}
+                        onSelect={(id) => addStudentToSession(session.id, id)}
+                      />
+                    </div>
                   )}
                 </div>
 
                 {/* Table */}
                 {sessionStudents.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                  <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 sm:px-0 touch-pan-x">
+                    <table className="w-full text-sm min-w-[640px]">
                       <thead>
                         <tr className="border-b border-dark-500">
                           <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8">#</th>
@@ -422,20 +429,27 @@ export default function ProgramEditor({
                         {sessionStudents.map((studentId, idx) => {
                           const student = getStudent(studentId);
                           if (!student) return null;
+                          const addrHref = studentMapOpenUrl(student);
                           return (
                             <tr key={studentId} className="hover:bg-dark-700/50 transition">
                               <td className="px-4 py-3 text-gray-500 font-mono text-xs">{idx + 1}</td>
                               <td className="px-4 py-3 text-white font-medium whitespace-nowrap">{student.name}</td>
                               <td className="px-4 py-3">
-                                <a
-                                  href={student.mapsUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-accent hover:underline text-xs truncate block max-w-[200px]"
-                                  title={student.mapsUrl}
-                                >
-                                  {student.label}
-                                </a>
+                                {addrHref ? (
+                                  <a
+                                    href={addrHref}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-accent hover:underline text-xs truncate block max-w-[200px]"
+                                    title={student.label}
+                                  >
+                                    {student.label}
+                                  </a>
+                                ) : (
+                                  <span className="text-gray-500 text-xs truncate block max-w-[200px]" title={student.label}>
+                                    {student.label}
+                                  </span>
+                                )}
                               </td>
                               <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{student.contact1Name || "—"}</td>
                               <td className="px-4 py-3 whitespace-nowrap">

@@ -35,8 +35,8 @@ export default function SchoolSettings({ schoolId, initialSchool }: { schoolId: 
   }
 
   return (
-    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
         <h2 className="text-base font-semibold text-white">Okul Konumu</h2>
         {!editing && (
           <button

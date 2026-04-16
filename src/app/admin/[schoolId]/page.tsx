@@ -19,13 +19,13 @@ export default async function AdminPage({ params }: { params: Promise<{ schoolId
   const { schoolId } = await params;
   if (session.role !== "superadmin" && session.schoolId !== schoolId) redirect("/login");
 
-  const schoolReg = getSchoolById(schoolId);
+  const schoolReg = await getSchoolById(schoolId);
   if (!schoolReg) notFound();
 
-  const students = getStudents(schoolId);
-  const school = getSchool(schoolId);
-  const vehicles = getVehicles(schoolId);
-  const sessions = getSessions(schoolId);
+  const students = await getStudents(schoolId);
+  const school = await getSchool(schoolId);
+  const vehicles = await getVehicles(schoolId);
+  const sessions = await getSessions(schoolId);
 
   return (
     <div className="min-h-screen bg-dark-900">
@@ -40,7 +40,7 @@ export default async function AdminPage({ params }: { params: Promise<{ schoolId
         googleSheetsShareEmail={getServiceAccountEmailFromEnv()}
         googleSheetsConfigured={isGoogleSheetsConfigured()}
       />
-      <footer className={`${ADMIN_PAGE_CONTAINER} py-6 text-center`}>
+      <footer className={`${ADMIN_PAGE_CONTAINER} py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] text-center`}>
         <p className="text-xs text-gray-700">RotaPlan v0.2</p>
       </footer>
     </div>

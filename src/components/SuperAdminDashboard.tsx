@@ -143,24 +143,24 @@ export default function SuperAdminDashboard({ initialSchools, initialUsers }: Pr
   const totalVehicles = schools.reduce((s, x) => s + x.stats.vehicleCount, 0);
 
   return (
-    <main className="max-w-5xl mx-auto px-6 py-6 space-y-5">
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 text-center">
-          <p className="text-2xl font-bold text-white">{schools.length}</p>
-          <p className="text-xs text-gray-500 mt-1">Okul</p>
+    <main className="max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-3 sm:p-4 text-center">
+          <p className="text-xl sm:text-2xl font-bold text-white">{schools.length}</p>
+          <p className="text-[10px] sm:text-xs text-gray-500 mt-1">Okul</p>
         </div>
-        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 text-center">
-          <p className="text-2xl font-bold text-accent">{totalStudents}</p>
-          <p className="text-xs text-gray-500 mt-1">Toplam Öğrenci</p>
+        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-3 sm:p-4 text-center">
+          <p className="text-xl sm:text-2xl font-bold text-accent">{totalStudents}</p>
+          <p className="text-[10px] sm:text-xs text-gray-500 mt-1">Toplam Öğrenci</p>
         </div>
-        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 text-center">
-          <p className="text-2xl font-bold text-white">{totalVehicles}</p>
-          <p className="text-xs text-gray-500 mt-1">Toplam Araç</p>
+        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-3 sm:p-4 text-center">
+          <p className="text-xl sm:text-2xl font-bold text-white">{totalVehicles}</p>
+          <p className="text-[10px] sm:text-xs text-gray-500 mt-1">Toplam Araç</p>
         </div>
       </div>
 
-      <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h2 className="text-base font-semibold text-white">Okullar</h2>
           <button
             onClick={() => { setShowForm(!showForm); setEditingSchool(null); setFormError(null); }}
@@ -247,17 +247,17 @@ export default function SuperAdminDashboard({ initialSchools, initialUsers }: Pr
               const schoolUsers = getSchoolUsers(school.id);
               return (
               <li key={school.id} className="py-4 space-y-3">
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="text-base font-medium text-white">{school.name}</p>
                     <p className="text-sm text-gray-500">{school.label}</p>
-                    <div className="flex gap-3 mt-1 text-xs text-gray-500">
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-gray-500">
                       <span>{stats.studentCount} öğrenci</span>
                       <span>{stats.vehicleCount} araç</span>
                       <span>{stats.sessionCount} seans</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex flex-wrap items-center gap-1 shrink-0">
                     <Link
                       href={`/admin/${school.id}`}
                       className="px-3 py-2 text-xs font-semibold text-dark-900 bg-accent hover:bg-accent-hover rounded-lg transition"
@@ -347,15 +347,17 @@ export default function SuperAdminDashboard({ initialSchools, initialUsers }: Pr
                   )}
 
                   {addingUserForSchool === school.id ? (
-                    <form onSubmit={handleCreateUser} className="mt-2 flex items-end gap-2">
-                      <input name="email" type="email" required placeholder="admin@okul.com" className="flex-1 px-2.5 py-1.5 bg-dark-700 border border-dark-500 rounded-lg text-xs text-white placeholder-gray-500 focus:border-accent focus:outline-none" />
-                      <input name="password" type="text" autoComplete="new-password" required placeholder="Şifre (min 4)" minLength={4} className="w-32 px-2.5 py-1.5 bg-dark-700 border border-dark-500 rounded-lg text-xs text-white placeholder-gray-500 focus:border-accent focus:outline-none" />
-                      <button type="submit" disabled={userLoading} className="px-3 py-1.5 text-xs font-semibold text-dark-900 bg-accent hover:bg-accent-hover rounded-lg transition disabled:opacity-50">
-                        {userLoading ? "..." : "Ekle"}
-                      </button>
-                      <button type="button" onClick={() => { setAddingUserForSchool(null); setUserFormError(null); }} className="px-2 py-1.5 text-xs text-gray-500 hover:text-white transition">
-                        İptal
-                      </button>
+                    <form onSubmit={handleCreateUser} className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+                      <input name="email" type="email" required placeholder="admin@okul.com" className="flex-1 min-w-0 px-2.5 py-1.5 bg-dark-700 border border-dark-500 rounded-lg text-xs text-white placeholder-gray-500 focus:border-accent focus:outline-none" />
+                      <input name="password" type="text" autoComplete="new-password" required placeholder="Şifre (min 4)" minLength={4} className="w-full sm:w-32 px-2.5 py-1.5 bg-dark-700 border border-dark-500 rounded-lg text-xs text-white placeholder-gray-500 focus:border-accent focus:outline-none" />
+                      <div className="flex gap-2">
+                        <button type="submit" disabled={userLoading} className="px-3 py-1.5 text-xs font-semibold text-dark-900 bg-accent hover:bg-accent-hover rounded-lg transition disabled:opacity-50">
+                          {userLoading ? "..." : "Ekle"}
+                        </button>
+                        <button type="button" onClick={() => { setAddingUserForSchool(null); setUserFormError(null); }} className="px-2 py-1.5 text-xs text-gray-500 hover:text-white transition">
+                          İptal
+                        </button>
+                      </div>
                     </form>
                   ) : (
                     <button

@@ -4,14 +4,14 @@ import { DAY_LABELS, DAYS } from "./weekly-program-shared";
 export type WeeklyProgramRowKind = "header" | "data" | "separator";
 
 /** Haftalık program ızgarası + satır türleri (Sheets biçimlendirme için). */
-export function buildWeeklyProgramGridWithMeta(schoolId: string): {
+export async function buildWeeklyProgramGridWithMeta(schoolId: string): Promise<{
   rows: string[][];
   rowKinds: WeeklyProgramRowKind[];
   colCount: number;
-} {
-  const sessions = [...getSessions(schoolId)].sort((a, b) => a.time.localeCompare(b.time));
-  const students = getStudents(schoolId);
-  const schedule = getWeeklySchedule(schoolId);
+}> {
+  const sessions = [...(await getSessions(schoolId))].sort((a, b) => a.time.localeCompare(b.time));
+  const students = await getStudents(schoolId);
+  const schedule = await getWeeklySchedule(schoolId);
   const getStudentName = (id: string) => students.find((s) => s.id === id)?.name ?? "";
 
   const rows: string[][] = [];
@@ -43,6 +43,6 @@ export function buildWeeklyProgramGridWithMeta(schoolId: string): {
 }
 
 /** Sadece hücre değerleri. */
-export function buildWeeklyProgramGrid(schoolId: string): string[][] {
-  return buildWeeklyProgramGridWithMeta(schoolId).rows;
+export async function buildWeeklyProgramGrid(schoolId: string): Promise<string[][]> {
+  return (await buildWeeklyProgramGridWithMeta(schoolId)).rows;
 }

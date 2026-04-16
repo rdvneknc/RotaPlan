@@ -62,24 +62,24 @@ export default function AdminDashboard({
   ];
 
   return (
-    <main className={`${ADMIN_PAGE_CONTAINER} py-6 space-y-5`}>
+    <main className={`${ADMIN_PAGE_CONTAINER} py-4 sm:py-6 space-y-4 sm:space-y-5`}>
       {/* Stat kartları */}
-      <div className="grid grid-cols-4 gap-3">
-        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 text-center">
-          <p className="text-2xl font-bold text-white">{students.length}</p>
-          <p className="text-xs text-gray-500 mt-1">Öğrenci</p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-3 sm:p-4 text-center">
+          <p className="text-xl sm:text-2xl font-bold text-white">{students.length}</p>
+          <p className="text-[10px] sm:text-xs text-gray-500 mt-1">Öğrenci</p>
         </div>
-        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 text-center">
-          <p className="text-2xl font-bold text-accent">{activeCount}</p>
-          <p className="text-xs text-gray-500 mt-1">Aktif</p>
+        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-3 sm:p-4 text-center">
+          <p className="text-xl sm:text-2xl font-bold text-accent">{activeCount}</p>
+          <p className="text-[10px] sm:text-xs text-gray-500 mt-1">Aktif</p>
         </div>
-        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 text-center">
-          <p className="text-2xl font-bold text-white">{sessions.length}</p>
-          <p className="text-xs text-gray-500 mt-1">Seans</p>
+        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-3 sm:p-4 text-center">
+          <p className="text-xl sm:text-2xl font-bold text-white">{sessions.length}</p>
+          <p className="text-[10px] sm:text-xs text-gray-500 mt-1">Seans</p>
         </div>
-        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 text-center">
-          <p className="text-2xl font-bold text-white">{vehicles.length}</p>
-          <p className="text-xs text-gray-500 mt-1">Araç</p>
+        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-3 sm:p-4 text-center">
+          <p className="text-xl sm:text-2xl font-bold text-white">{vehicles.length}</p>
+          <p className="text-[10px] sm:text-xs text-gray-500 mt-1">Araç</p>
         </div>
       </div>
 
@@ -117,7 +117,7 @@ export default function AdminDashboard({
       )}
 
       {activeTab === "program" && (
-        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
+        <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 sm:p-6">
           <h2 className="text-base font-semibold text-white mb-2">Haftalık Program</h2>
           <p className="text-sm text-gray-500 mb-5">
             Haftalık programı geniş tablo görünümünde düzenleyin. Her gün için hangi öğrencinin hangi seansta olacağını belirleyin.

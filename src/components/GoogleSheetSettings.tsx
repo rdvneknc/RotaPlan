@@ -34,7 +34,7 @@ export default function GoogleSheetSettings({ schoolId, initialSheetId, shareEma
   }
 
   return (
-    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6 space-y-4">
+    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 sm:p-6 space-y-4">
       <h2 className="text-base font-semibold text-white">Google Sheets</h2>
       <p className="text-sm text-gray-500">
         Bu okulun haftalık programı tek bir Google Sheets dosyasıyla eşlenir. Linki kaydettikten sonra Program sayfasından &quot;Sheets&apos;e gönder&quot; / &quot;Sheets&apos;ten al&quot; kullanın.

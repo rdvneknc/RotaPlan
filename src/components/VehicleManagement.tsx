@@ -75,8 +75,8 @@ export default function VehicleManagement({ schoolId, vehicles, onRefresh }: Pro
   }
 
   return (
-    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-6">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-dark-800 rounded-2xl border border-dark-500 p-4 sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
         <h2 className="text-base font-semibold text-white">Araç Yönetimi</h2>
         <button
           onClick={() => { setShowForm(!showForm); setEditingVehicle(null); setError(""); }}
@@ -128,7 +128,7 @@ export default function VehicleManagement({ schoolId, vehicles, onRefresh }: Pro
               />
               <p className="text-xs text-gray-600 mt-1">3–40 karakter; küçük harf, rakam, . _ - (tüm okullarda benzersiz)</p>
             </div>
-                       <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-400 mb-1.5">Plaka</label>
                 <input
@@ -187,13 +187,14 @@ export default function VehicleManagement({ schoolId, vehicles, onRefresh }: Pro
           <ul className="space-y-3">
             {vehicles.map((vehicle) => (
               <li key={vehicle.id} className="bg-dark-700 rounded-xl p-4 border border-dark-500">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center shrink-0 mt-0.5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center shrink-0 mt-0.5">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
                     </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
+                    </div>
+                    <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <p className="text-base font-medium text-white">{vehicle.driverName}</p>
                       <span className="text-xs bg-dark-500 text-gray-300 px-2 py-0.5 rounded-md font-mono">{vehicle.plate}</span>
@@ -206,20 +207,22 @@ export default function VehicleManagement({ schoolId, vehicles, onRefresh }: Pro
                       )}
                     </div>
                     <p className="text-sm text-gray-500">Kapasite: {vehicle.capacity} kişi</p>
-                    <div className="mt-2 flex items-center gap-2">
+                    <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                       <button
+                        type="button"
                         onClick={() => copyLink(vehicle.slug)}
-                        className="text-xs text-accent hover:text-accent-hover flex items-center gap-1 transition"
+                        className="text-xs text-accent hover:text-accent-hover flex items-center gap-1 transition w-fit"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
                         </svg>
                         {copied === vehicle.slug ? "Kopyalandı!" : "Şoför Linkini Kopyala"}
                       </button>
-                      <span className="text-xs text-gray-600 truncate max-w-[180px]">{getDriverUrl(vehicle.slug)}</span>
+                      <span className="text-xs text-gray-600 truncate max-w-full sm:max-w-[200px]">{getDriverUrl(vehicle.slug)}</span>
+                    </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center justify-end sm:justify-start gap-1 shrink-0 sm:pt-0.5">
                     <button
                       onClick={() => { setEditingVehicle(vehicle); setShowForm(false); setError(""); }}
                       className="p-2 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition"
