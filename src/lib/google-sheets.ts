@@ -221,6 +221,43 @@ function gridRange(
   };
 }
 
+function collectDeleteProtectedRangeRequests(sheet: {
+  protectedRanges?: { protectedRangeId?: number | null }[] | null;
+}): object[] {
+  if (!sheet.protectedRanges?.length) return [];
+  return sheet.protectedRanges
+    .map((p) => p.protectedRangeId)
+    .filter((id): id is number => typeof id === "number")
+    .map((protectedRangeId) => ({ deleteProtectedRange: { protectedRangeId } }));
+}
+
+/** Gün + ders saati satırları; yalnızca servis hesabı (uygulama) düzenleyebilir. */
+function collectAddHeaderProtectedRangeRequests(
+  sheetId: number,
+  rowKinds: WeeklyProgramRowKind[],
+  colCount: number,
+  editorServiceAccountEmail: string,
+): object[] {
+  const requests: object[] = [];
+  for (let i = 0; i < rowKinds.length; i++) {
+    if (rowKinds[i] !== "header") continue;
+    requests.push({
+      addProtectedRange: {
+        protectedRange: {
+          range: gridRange(sheetId, i, i + 1, 0, colCount),
+          description: "RotaPlan: gün ve ders saati (panelden düzenlenir)",
+          warningOnly: false,
+          editors: {
+            users: [editorServiceAccountEmail],
+            domainUsersCanEdit: false,
+          },
+        },
+      },
+    });
+  }
+  return requests;
+}
+
 function buildStyleRequests(
   sheetId: number,
   rowKinds: WeeklyProgramRowKind[],
@@ -369,9 +406,17 @@ export async function writeWeeklyProgramGrid(
   layout: WeeklyProgramSheetLayout,
 ): Promise<void> {
   const sheets = await getSheetsClient();
+  const creds = getCredentials();
+  if (!creds) {
+    throw new Error("Google Sheets yapılandırılmadı. Sunucuda GOOGLE_SERVICE_ACCOUNT_JSON ortam değişkenini ayarlayın.");
+  }
 
   const meta = await sheets.spreadsheets.get({ spreadsheetId });
-  let sheetId = meta.data.sheets?.find((s) => s.properties?.title === GOOGLE_SHEET_TAB)?.properties?.sheetId;
+  const existingSheet = meta.data.sheets?.find((s) => s.properties?.title === GOOGLE_SHEET_TAB);
+  let sheetId = existingSheet?.properties?.sheetId;
+
+  let deleteProtectionRequests: object[] =
+    existingSheet && sheetId != null ? collectDeleteProtectedRangeRequests(existingSheet) : [];
 
   if (sheetId === undefined || sheetId === null) {
     const addRes = await sheets.spreadsheets.batchUpdate({
@@ -394,6 +439,11 @@ export async function writeWeeklyProgramGrid(
       throw new Error("Haftalık Program sekmesi oluşturulamadı.");
     }
     sheetId = newId;
+    deleteProtectionRequests = [];
+  }
+
+  if (deleteProtectionRequests.length > 0) {
+    await runBatchUpdates(sheets, spreadsheetId, deleteProtectionRequests);
   }
 
   const lastRow = Math.max(grid.length, 1);
@@ -423,6 +473,16 @@ export async function writeWeeklyProgramGrid(
 
   const styleRequests = buildStyleRequests(sheetId, layout.rowKinds, layout.colCount, grid.length);
   await runBatchUpdates(sheets, spreadsheetId, styleRequests);
+
+  const protectRequests = collectAddHeaderProtectedRangeRequests(
+    sheetId,
+    layout.rowKinds,
+    layout.colCount,
+    creds.client_email,
+  );
+  if (protectRequests.length > 0) {
+    await runBatchUpdates(sheets, spreadsheetId, protectRequests);
+  }
 }
 
 /** 0 = A, 25 = Z, 26 = AA */
