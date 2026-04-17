@@ -64,8 +64,6 @@ export const fileAppStore: AppStore = {
   updateDailyDistributionGroup: file.updateDailyDistributionGroup,
   getGroupDistribution: file.getGroupDistribution,
   generateRouteLinkForGroup: file.generateRouteLinkForGroup,
-  autoDistributeStudents: file.autoDistributeStudents,
-  generateRouteLink: file.generateRouteLink,
   readPasswordResetTokens: file.readPasswordResetTokens,
   writePasswordResetTokens: file.writePasswordResetTokens,
 };

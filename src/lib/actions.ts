@@ -10,7 +10,6 @@ import {
   setAllStudentsActiveByVehicle,
   assignStudentToVehicle,
   reorderStudent,
-  generateRouteLink,
   getSchool,
   updateSchool,
   getVehicles,
@@ -23,7 +22,6 @@ import {
   isDriverLoginUsernameTaken,
   normalizeDriverUsername,
   getStudentsByVehicle,
-  autoDistributeStudents,
   getSessions,
   addSession as storeAddSession,
   updateSession as storeUpdateSession,
@@ -76,7 +74,6 @@ import {
 } from "./google-sheets";
 import { buildWeeklyProgramGridWithMeta } from "./weekly-program-grid";
 import { parseGridSheetRows, DAYS } from "./weekly-program-shared";
-import { RouteMode } from "./types";
 import { revalidatePath } from "next/cache";
 import { createSession as createAuthSession, destroySession, getSession, updateSession } from "./session";
 import { redirect } from "next/navigation";
@@ -768,24 +765,6 @@ export async function updateClassDuration(schoolId: string, minutes: number) {
   await storeSetClassDuration(schoolId, minutes);
   revalidatePath("/");
   return { success: true };
-}
-
-// ---------------------------------------------------------------------------
-// Auto Distribution (legacy)
-// ---------------------------------------------------------------------------
-
-export async function autoDistribute(schoolId: string) {
-  const result = await autoDistributeStudents(schoolId);
-  revalidatePath("/");
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Route
-// ---------------------------------------------------------------------------
-
-export async function getRouteLink(schoolId: string, mode: RouteMode, vehicleId?: string) {
-  return await generateRouteLink(schoolId, mode, vehicleId);
 }
 
 // ---------------------------------------------------------------------------

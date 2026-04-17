@@ -5,7 +5,6 @@ import type {
   SchoolInfo,
   School,
   AppUser,
-  RouteMode,
   DailyDistribution,
   SessionDistributionAssignment,
 } from "../types";
@@ -135,8 +134,6 @@ export interface AppStore {
     vehicleId: string,
     excludeStudentIds?: string[] | null,
   ): Promise<string | null>;
-  autoDistributeStudents(schoolId: string): Promise<{ error?: string; distributed?: number }>;
-  generateRouteLink(schoolId: string, mode: RouteMode, vehicleId?: string): Promise<string | null>;
 
   readPasswordResetTokens(): Promise<PasswordResetTokenRecord[]>;
   writePasswordResetTokens(tokens: PasswordResetTokenRecord[]): Promise<void>;

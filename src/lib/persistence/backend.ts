@@ -20,9 +20,3 @@ export function getAppStore(): AppStore {
   }
   return cached;
 }
-
-/** Test veya özel backend enjeksiyonu (isteğe bağlı). */
-export function __resetAppStoreForTests(): void {
-  cached = null;
-  configuredMode = null;
-}

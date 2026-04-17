@@ -7,6 +7,7 @@ import DriverLoginForm from "@/components/DriverLoginForm";
 import { isFirebaseClientConfigured, getFirebaseAuth } from "@/lib/firebase/client-app";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
+import PasswordInput from "@/components/PasswordInput";
 
 type LoginMode = "admin" | "driver";
 
@@ -132,14 +133,13 @@ export default function LoginPage() {
               <label htmlFor="password" className="block text-sm font-medium text-gray-400 mb-1.5">
                 Şifre
               </label>
-              <input
+              <PasswordInput
                 id="password"
                 name="password"
-                type="password"
                 required
+                disabled={loading}
                 autoComplete="current-password"
                 placeholder="••••••"
-                className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
               />
             </div>
 

@@ -7,17 +7,6 @@ import { studentMapOpenUrl } from "@/lib/parse-maps-url";
 
 const DISTRIBUTION_POLL_MS = 60_000;
 
-const DEMO_FIXED_TIME_HM: [number, number] | null = null;
-
-function getClockNow(nowTick: number): Date {
-  if (DEMO_FIXED_TIME_HM) {
-    const d = new Date();
-    d.setHours(DEMO_FIXED_TIME_HM[0], DEMO_FIXED_TIME_HM[1], 0, 0);
-    return d;
-  }
-  return new Date(nowTick);
-}
-
 function groupTimeToMinutes(timeStr: string): number | null {
   const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
@@ -69,13 +58,13 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
   const [distribution, setDistribution] = useState<DailyDistribution | null>(initialDistribution);
   const [workingToday, setWorkingToday] = useState(initialWorkingToday);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [profileStudent, setProfileStudent] = useState<Student | null>(null);
   const selectedGroupRef = useRef(selectedGroupId);
   selectedGroupRef.current = selectedGroupId;
 
   const selectedGroup = distribution?.[selectedGroupId] ?? null;
 
   useEffect(() => {
-    if (DEMO_FIXED_TIME_HM) return;
     function tick() { setNowTick(Date.now()); }
     const id = setInterval(tick, 60_000);
     function onVisible() {
@@ -190,6 +179,20 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
   }, [groupStudents, completedStudentIds]);
 
   useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setProfileStudent(null);
+    }
+    if (profileStudent) {
+      document.addEventListener("keydown", onKey);
+      document.body.style.overflow = "hidden";
+    }
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [profileStudent]);
+
+  useEffect(() => {
     void syncDistribution();
     const distInterval = setInterval(() => {
       if (document.visibilityState === "visible") void syncDistribution();
@@ -268,18 +271,12 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
           {/* Grup seçici */}
           <div className="bg-dark-800 rounded-2xl border border-dark-500 p-5">
             <label className="block text-xs font-medium text-gray-500 mb-1">Grup Seçin</label>
-            {DEMO_FIXED_TIME_HM ? (
-              <p className="text-[11px] text-amber-400/90 mb-2 rounded-lg border border-amber-600/30 bg-amber-500/10 px-2 py-1.5">
-                Deneme: saat <strong className="text-amber-300">{String(DEMO_FIXED_TIME_HM[0]).padStart(2, "0")}:{String(DEMO_FIXED_TIME_HM[1]).padStart(2, "0")}</strong>
-              </p>
-            ) : (
-              <p className="text-[11px] text-gray-600 mb-2">Saati geçen gruplar soluk ve &quot;Geçti&quot; etiketiyle gösterilir.</p>
-            )}
+            <p className="text-[11px] text-gray-600 mb-2">Saati geçen gruplar soluk ve &quot;Geçti&quot; etiketiyle gösterilir.</p>
             <div className="space-y-2">
               {getSortedGroups(distribution!).map(({ groupId, group }) => {
                 const count = getGroupStudentCount(groupId);
                 const isSelected = selectedGroupId === groupId;
-                const now = getClockNow(nowTick);
+                const now = new Date(nowTick);
                 const timePast = isGroupTimePast(group, now);
                 const isPickup = group.type === "pickup";
                 const baseIdle =
@@ -504,30 +501,47 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
                               )}
                             </div>
                           </div>
-                          {pinHref ? (
-                            <a
-                              href={pinHref}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="self-center p-2.5 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition shrink-0 border border-transparent"
-                              title="Haritada Göster"
+                          <div className="flex items-center shrink-0 self-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setProfileStudent(student);
+                              }}
+                              className="p-2.5 text-gray-500 hover:text-sky-400 hover:bg-sky-500/10 rounded-lg transition border border-transparent"
+                              title="Öğrenci bilgileri"
+                              aria-label={`${student.name} — bilgiler`}
                             >
                               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                               </svg>
-                            </a>
-                          ) : (
-                            <span
-                              className="self-center p-2.5 text-gray-600 shrink-0 opacity-50 cursor-not-allowed"
-                              title="Konum bilgisi yok"
-                            >
-                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                            </span>
-                          )}
+                            </button>
+                            {pinHref ? (
+                              <a
+                                href={pinHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-2.5 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition border border-transparent"
+                                title="Haritada Göster"
+                              >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                              </a>
+                            ) : (
+                              <span
+                                className="p-2.5 text-gray-600 opacity-50 cursor-not-allowed"
+                                title="Konum bilgisi yok"
+                              >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                              </span>
+                            )}
+                          </div>
                         </li>
                       );
                     })}
@@ -537,6 +551,108 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
             </>
           )}
         </>
+      )}
+
+      {profileStudent && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="driver-profile-title"
+          onClick={() => setProfileStudent(null)}
+        >
+          <div
+            className="w-full sm:max-w-md max-h-[min(90dvh,640px)] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-dark-500 bg-dark-800 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 flex items-center justify-between gap-3 px-5 py-4 border-b border-dark-500 bg-dark-800/95">
+              <h2 id="driver-profile-title" className="text-lg font-semibold text-white">
+                Öğrenci bilgileri
+              </h2>
+              <button
+                type="button"
+                onClick={() => setProfileStudent(null)}
+                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-dark-600 transition"
+                aria-label="Kapat"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500 mb-1">Ad Soyad</p>
+                <p className="text-base text-white font-medium">{profileStudent.name}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500 mb-1">Adres</p>
+                <p className="text-sm text-gray-300 leading-relaxed">{profileStudent.label || "—"}</p>
+              </div>
+              {(profileStudent.contact1Name || profileStudent.contact1Phone) && (
+                <div className="rounded-xl border border-dark-500 bg-dark-700/40 p-4 space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500">İletişim 1</p>
+                  {profileStudent.contact1Name ? (
+                    <p className="text-sm text-white">{profileStudent.contact1Name}</p>
+                  ) : null}
+                  {profileStudent.contact1Phone ? (
+                    <a
+                      href={`tel:${profileStudent.contact1Phone.replace(/\s/g, "")}`}
+                      className="text-sm text-accent hover:underline font-medium inline-block"
+                    >
+                      {profileStudent.contact1Phone}
+                    </a>
+                  ) : (
+                    <p className="text-sm text-gray-500">Telefon yok</p>
+                  )}
+                </div>
+              )}
+              {(profileStudent.contact2Name || profileStudent.contact2Phone) && (
+                <div className="rounded-xl border border-dark-500 bg-dark-700/40 p-4 space-y-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500">İletişim 2</p>
+                  {profileStudent.contact2Name ? (
+                    <p className="text-sm text-white">{profileStudent.contact2Name}</p>
+                  ) : null}
+                  {profileStudent.contact2Phone ? (
+                    <a
+                      href={`tel:${profileStudent.contact2Phone.replace(/\s/g, "")}`}
+                      className="text-sm text-accent hover:underline font-medium inline-block"
+                    >
+                      {profileStudent.contact2Phone}
+                    </a>
+                  ) : null}
+                </div>
+              )}
+              {!profileStudent.contact1Phone && !profileStudent.contact2Phone && !profileStudent.contact1Name && !profileStudent.contact2Name && (
+                <p className="text-sm text-gray-500">Kayıtlı veli iletişim bilgisi yok.</p>
+              )}
+              {(() => {
+                const h = studentMapOpenUrl(profileStudent);
+                return h ? (
+                  <a
+                    href={h}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-semibold text-dark-900 bg-accent hover:bg-accent-hover transition"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Haritada aç
+                  </a>
+                ) : null;
+              })()}
+              <button
+                type="button"
+                onClick={() => setProfileStudent(null)}
+                className="w-full py-3 rounded-xl text-sm font-medium text-gray-300 border border-dark-500 hover:bg-dark-700 transition"
+              >
+                Kapat
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

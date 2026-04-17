@@ -41,8 +41,3 @@ export async function buildWeeklyProgramGridWithMeta(schoolId: string): Promise<
 
   return { rows, rowKinds, colCount };
 }
-
-/** Sadece hücre değerleri. */
-export async function buildWeeklyProgramGrid(schoolId: string): Promise<string[][]> {
-  return (await buildWeeklyProgramGridWithMeta(schoolId)).rows;
-}

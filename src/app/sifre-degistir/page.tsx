@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { changePasswordAction, fetchSession } from "@/lib/actions";
 import { useRouter } from "next/navigation";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function ChangePasswordPage() {
   const [mustChange, setMustChange] = useState(false);
@@ -90,12 +91,12 @@ export default function ChangePasswordPage() {
                 <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-400 mb-1.5">
                   Mevcut Şifre
                 </label>
-                <input
+                <PasswordInput
                   id="currentPassword"
                   name="currentPassword"
-                  type="password"
                   required
-                  className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
+                  disabled={loading}
+                  autoComplete="current-password"
                 />
               </div>
             )}
@@ -103,26 +104,26 @@ export default function ChangePasswordPage() {
               <label htmlFor="newPassword" className="block text-sm font-medium text-gray-400 mb-1.5">
                 Yeni Şifre
               </label>
-              <input
+              <PasswordInput
                 id="newPassword"
                 name="newPassword"
-                type="password"
                 required
                 minLength={4}
-                className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
+                disabled={loading}
+                autoComplete="new-password"
               />
             </div>
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-400 mb-1.5">
                 Yeni Şifre (Tekrar)
               </label>
-              <input
+              <PasswordInput
                 id="confirmPassword"
                 name="confirmPassword"
-                type="password"
                 required
                 minLength={4}
-                className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white placeholder-gray-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
+                disabled={loading}
+                autoComplete="new-password"
               />
             </div>
 

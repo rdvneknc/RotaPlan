@@ -7,8 +7,8 @@ import type { AppStore } from "./persistence/app-store";
 
 const backend = () => getAppStore();
 
-/** Doğrudan backend (Firestore test / özel enjeksiyon). Normal kullanımda aşağıdaki fonksiyonlar yeterli. */
-export { getAppStore, __resetAppStoreForTests } from "./persistence/backend";
+/** Doğrudan backend (özel enjeksiyon). Normal kullanımda aşağıdaki fonksiyonlar yeterli. */
+export { getAppStore } from "./persistence/backend";
 
 export type { SessionDistributionAssignment } from "./types";
 export type { WeeklyScheduleMap } from "./persistence/app-store";
@@ -230,16 +230,6 @@ export async function generateRouteLinkForGroup(
   excludeStudentIds?: string[] | null,
 ) {
   return backend().generateRouteLinkForGroup(schoolId, groupId, vehicleId, excludeStudentIds);
-}
-export async function autoDistributeStudents(schoolId: string) {
-  return backend().autoDistributeStudents(schoolId);
-}
-export async function generateRouteLink(
-  schoolId: string,
-  mode: Parameters<AppStore["generateRouteLink"]>[1],
-  vehicleId?: string,
-) {
-  return backend().generateRouteLink(schoolId, mode, vehicleId);
 }
 
 export async function readPasswordResetTokens() {

@@ -13,6 +13,7 @@ import {
   firebaseConfirmPasswordReset,
   firebaseAuthErrorToTr,
 } from "@/lib/firebase/client-app";
+import PasswordInput from "@/components/PasswordInput";
 
 function PasswordFormShared(props: {
   onSubmit: (newPassword: string, confirmPassword: string) => Promise<void>;
@@ -35,28 +36,26 @@ function PasswordFormShared(props: {
         <label htmlFor="newPassword" className="block text-sm font-medium text-gray-400 mb-1.5">
           Yeni şifre
         </label>
-        <input
+        <PasswordInput
           id="newPassword"
           name="newPassword"
-          type="password"
           required
           minLength={minLength}
+          disabled={loading}
           autoComplete="new-password"
-          className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
         />
       </div>
       <div>
         <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-400 mb-1.5">
           Yeni şifre (tekrar)
         </label>
-        <input
+        <PasswordInput
           id="confirmPassword"
           name="confirmPassword"
-          type="password"
           required
           minLength={minLength}
+          disabled={loading}
           autoComplete="new-password"
-          className="w-full rounded-xl border border-dark-400 bg-dark-700 px-4 py-3 text-base text-white focus:border-accent focus:ring-1 focus:ring-accent outline-none transition"
         />
       </div>
 

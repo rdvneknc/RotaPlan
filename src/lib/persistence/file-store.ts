@@ -5,7 +5,6 @@ import {
   SchoolInfo,
   School,
   AppUser,
-  RouteMode,
   DailyDistribution,
   SessionDistributionAssignment,
 } from "../types";
@@ -1246,88 +1245,6 @@ export async function generateRouteLinkForGroup(
   const destination = `${last.lat},${last.lng}`;
   const waypointCoords = students.length > 1
     ? students.slice(0, -1).map((s) => `${s.lat},${s.lng}`).join("|")
-    : "";
-  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-  if (waypointCoords) url += `&waypoints=${waypointCoords}`;
-  return url;
-}
-
-// ---------------------------------------------------------------------------
-// Auto Distribution (legacy)
-// ---------------------------------------------------------------------------
-
-export async function autoDistributeStudents(schoolId: string): Promise<{ error?: string; distributed?: number }> {
-  const data = await readSchoolData(schoolId);
-  const active = data.students.filter((s) => s.isActive);
-  const vehicles = data.vehicles;
-
-  if (vehicles.length === 0) {
-    return { error: "Araç tanımlanmamış. Önce Araçlar sekmesinden araç ekleyin." };
-  }
-  if (active.length === 0) {
-    return { error: "Aktif öğrenci yok. Önce öğrencileri listeye ekleyin." };
-  }
-
-  const result = distributeStudents(active, vehicles, data.school);
-
-  const assignmentMap = new Map<string, { vehicleId: string; order: number }>();
-  for (const a of result.assignments) {
-    assignmentMap.set(a.studentId, { vehicleId: a.vehicleId, order: a.order });
-  }
-
-  for (const student of data.students) {
-    const assignment = assignmentMap.get(student.id);
-    if (assignment) {
-      student.vehicleId = assignment.vehicleId;
-    }
-  }
-
-  data.students.sort((a, b) => {
-    const aAssign = assignmentMap.get(a.id);
-    const bAssign = assignmentMap.get(b.id);
-    if (aAssign && !bAssign) return -1;
-    if (!aAssign && bAssign) return 1;
-    if (aAssign && bAssign) {
-      if (aAssign.vehicleId !== bAssign.vehicleId) {
-        return aAssign.vehicleId.localeCompare(bAssign.vehicleId);
-      }
-      return aAssign.order - bAssign.order;
-    }
-    return 0;
-  });
-
-  await saveSchoolData(schoolId, data);
-  return { distributed: result.assignments.length };
-}
-
-// ---------------------------------------------------------------------------
-// Route
-// ---------------------------------------------------------------------------
-
-export async function generateRouteLink(schoolId: string, mode: RouteMode, vehicleId?: string): Promise<string | null> {
-  const data = await readSchoolData(schoolId);
-  let active = data.students.filter((s) => s.isActive);
-  if (vehicleId) {
-    active = active.filter((s) => s.vehicleId === vehicleId);
-  }
-  if (active.length === 0) return null;
-
-  const schoolCoord = `${data.school.lat},${data.school.lng}`;
-
-  if (mode === "pickup") {
-    const origin = "My+Location";
-    const destination = schoolCoord;
-    const waypointCoords = active.map((s) => `${s.lat},${s.lng}`).join("|");
-    let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-    if (waypointCoords) url += `&waypoints=${waypointCoords}`;
-    return url;
-  }
-
-  const origin = schoolCoord;
-  const last = active[active.length - 1];
-  const destination = `${last.lat},${last.lng}`;
-  const waypointCoords = active.length > 1
-    ? active.slice(0, -1).map((s) => `${s.lat},${s.lng}`).join("|")
     : "";
   let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
   if (waypointCoords) url += `&waypoints=${waypointCoords}`;

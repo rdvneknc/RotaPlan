@@ -85,5 +85,3 @@ export interface Coordinates {
   lat: number;
   lng: number;
 }
-
-export type RouteMode = "pickup" | "dropoff";
