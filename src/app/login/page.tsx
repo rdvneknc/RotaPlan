@@ -6,6 +6,7 @@ import { loginAction, finalizeFirebaseAdminLoginAction } from "@/lib/actions";
 import DriverLoginForm from "@/components/DriverLoginForm";
 import { isFirebaseClientConfigured, getFirebaseAuth } from "@/lib/firebase/client-app";
 import { signInWithEmailAndPassword } from "firebase/auth";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 type LoginMode = "admin" | "driver";
 
@@ -43,6 +44,9 @@ export default function LoginPage() {
           const fin = await finalizeFirebaseAdminLoginAction(idToken);
           if (fin && "error" in fin && fin.error) setError(fin.error);
         } catch (err: unknown) {
+          if (isRedirectError(err)) {
+            throw err;
+          }
           const code = err && typeof err === "object" && "code" in err ? String((err as { code: string }).code) : "";
           if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
             setError("E-posta veya şifre hatalı.");
