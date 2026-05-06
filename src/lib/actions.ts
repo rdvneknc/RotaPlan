@@ -304,9 +304,13 @@ export async function importStudentsFromGoogleSheet(
     return { error: "Sunucuda Google Sheets (GOOGLE_SERVICE_ACCOUNT_JSON) yapılandırılmadı." };
   }
 
-  const reg = await getSchoolById(schoolId);
-  if (!reg?.googleSheetId) {
-    return { error: "Önce Okul sekmesinden bu okula Google Sheets dosyası bağlayın." };
+  const rawSheet = (formData.get("googleSheetUrl") as string)?.trim() ?? "";
+  if (!rawSheet) {
+    return { error: "Öğrenci listesi için Google Sheets linki veya dosya ID’si girin." };
+  }
+  const spreadsheetId = parseSpreadsheetIdFromInput(rawSheet);
+  if (!spreadsheetId) {
+    return { error: "Geçerli bir Google Sheets linki veya dosya ID’si girin." };
   }
 
   const sheetTabRaw = (formData.get("sheetTab") as string)?.trim();
@@ -314,7 +318,7 @@ export async function importStudentsFromGoogleSheet(
 
   let rows: string[][];
   try {
-    rows = await readStudentImportSheet(reg.googleSheetId, sheetTab);
+    rows = await readStudentImportSheet(spreadsheetId, sheetTab);
   } catch (e) {
     return { error: formatGoogleSheetsUserError(e) };
   }

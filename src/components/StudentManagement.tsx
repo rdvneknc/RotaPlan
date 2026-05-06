@@ -15,7 +15,7 @@ interface Props {
   sessions: Session[];
   onRefresh: () => void;
   googleSheetsConfigured?: boolean;
-  hasGoogleSheetId?: boolean;
+  googleSheetsShareEmail?: string | null;
 }
 
 export default function StudentManagement({
@@ -25,7 +25,7 @@ export default function StudentManagement({
   sessions,
   onRefresh,
   googleSheetsConfigured = false,
-  hasGoogleSheetId = false,
+  googleSheetsShareEmail = null,
 }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -77,7 +77,7 @@ export default function StudentManagement({
         <StudentSheetImport
           schoolId={schoolId}
           googleSheetsConfigured={googleSheetsConfigured}
-          hasGoogleSheetId={hasGoogleSheetId}
+          shareEmail={googleSheetsShareEmail}
           onImportDone={onRefresh}
         />
       </div>

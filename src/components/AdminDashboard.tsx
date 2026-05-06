@@ -142,7 +142,7 @@ export default function AdminDashboard({
           sessions={sessions}
           onRefresh={refresh}
           googleSheetsConfigured={googleSheetsConfigured}
-          hasGoogleSheetId={Boolean(initialGoogleSheetId)}
+          googleSheetsShareEmail={googleSheetsShareEmail}
         />
       )}
 
