@@ -6,6 +6,7 @@ import { removeStudent } from "@/lib/actions";
 import { studentMapOpenUrl } from "@/lib/parse-maps-url";
 import AddStudentForm from "./AddStudentForm";
 import EditStudentModal from "./EditStudentModal";
+import StudentSheetImport from "./StudentSheetImport";
 
 interface Props {
   schoolId: string;
@@ -13,9 +14,19 @@ interface Props {
   vehicles: Vehicle[];
   sessions: Session[];
   onRefresh: () => void;
+  googleSheetsConfigured?: boolean;
+  hasGoogleSheetId?: boolean;
 }
 
-export default function StudentManagement({ schoolId, students, vehicles, sessions, onRefresh }: Props) {
+export default function StudentManagement({
+  schoolId,
+  students,
+  vehicles,
+  sessions,
+  onRefresh,
+  googleSheetsConfigured = false,
+  hasGoogleSheetId = false,
+}: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -60,6 +71,15 @@ export default function StudentManagement({ schoolId, students, vehicles, sessio
             </>
           )}
         </button>
+      </div>
+
+      <div className="mb-5">
+        <StudentSheetImport
+          schoolId={schoolId}
+          googleSheetsConfigured={googleSheetsConfigured}
+          hasGoogleSheetId={hasGoogleSheetId}
+          onImportDone={onRefresh}
+        />
       </div>
 
       {showForm && (

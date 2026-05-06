@@ -135,7 +135,15 @@ export default function AdminDashboard({
       )}
 
       {activeTab === "students" && (
-        <StudentManagement schoolId={schoolId} students={students} vehicles={vehicles} sessions={sessions} onRefresh={refresh} />
+        <StudentManagement
+          schoolId={schoolId}
+          students={students}
+          vehicles={vehicles}
+          sessions={sessions}
+          onRefresh={refresh}
+          googleSheetsConfigured={googleSheetsConfigured}
+          hasGoogleSheetId={Boolean(initialGoogleSheetId)}
+        />
       )}
 
       {activeTab === "sessions" && (

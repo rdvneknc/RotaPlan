@@ -508,3 +508,17 @@ export async function readWeeklyProgramGrid(spreadsheetId: string): Promise<stri
   if (!values || values.length === 0) return [];
   return values.map((row) => row.map((cell) => (cell == null ? "" : String(cell))));
 }
+
+/** Öğrenci toplu içe aktarma: başlık 1. satır, A–F, veri A2’den. */
+export async function readStudentImportSheet(spreadsheetId: string, sheetTab: string): Promise<string[][]> {
+  const sheets = await getSheetsClient();
+  const escaped = sheetTab.replace(/'/g, "''");
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${escaped}'!A2:F5000`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const values = res.data.values;
+  if (!values || values.length === 0) return [];
+  return values.map((row) => row.map((cell) => (cell == null ? "" : String(cell))));
+}

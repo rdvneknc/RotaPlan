@@ -72,8 +72,10 @@ import {
   isGoogleSheetsConfigured,
   writeWeeklyProgramGrid,
   readWeeklyProgramGrid,
+  readStudentImportSheet,
   formatGoogleSheetsUserError,
 } from "./google-sheets";
+import { STUDENT_IMPORT_DEFAULT_TAB, addressLabelFromCoords, parseStudentSheetRow, type ImportStudentsFromSheetResult } from "./student-sheet-import";
 import { buildWeeklyProgramGridWithMeta } from "./weekly-program-grid";
 import { parseGridSheetRows, DAYS } from "./weekly-program-shared";
 import { revalidatePath } from "next/cache";
@@ -289,6 +291,90 @@ export async function createStudent(schoolId: string, formData: FormData) {
 
   revalidatePath("/");
   return { success: true };
+}
+
+export async function importStudentsFromGoogleSheet(
+  schoolId: string,
+  formData: FormData,
+): Promise<ImportStudentsFromSheetResult> {
+  const gate = await requireSchoolEditor(schoolId);
+  if (gate.error) return { error: gate.error };
+
+  if (!isGoogleSheetsConfigured()) {
+    return { error: "Sunucuda Google Sheets (GOOGLE_SERVICE_ACCOUNT_JSON) yapılandırılmadı." };
+  }
+
+  const reg = await getSchoolById(schoolId);
+  if (!reg?.googleSheetId) {
+    return { error: "Önce Okul sekmesinden bu okula Google Sheets dosyası bağlayın." };
+  }
+
+  const sheetTabRaw = (formData.get("sheetTab") as string)?.trim();
+  const sheetTab = sheetTabRaw || STUDENT_IMPORT_DEFAULT_TAB;
+
+  let rows: string[][];
+  try {
+    rows = await readStudentImportSheet(reg.googleSheetId, sheetTab);
+  } catch (e) {
+    return { error: formatGoogleSheetsUserError(e) };
+  }
+
+  const failed: { sheetRow: number; name: string; reason: string }[] = [];
+  let skipped = 0;
+  let imported = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const outcome = parseStudentSheetRow(rows[i] ?? [], i);
+    if (outcome.kind === "skip") {
+      skipped++;
+      continue;
+    }
+    if (outcome.kind === "error") {
+      failed.push({ sheetRow: outcome.sheetRow, name: outcome.name, reason: outcome.reason });
+      continue;
+    }
+
+    const row = outcome.data;
+    const parsed = await parseMapsUrl(row.mapsUrl);
+    if ("error" in parsed) {
+      failed.push({ sheetRow: row.sheetRow, name: row.name, reason: parsed.error });
+      continue;
+    }
+
+    try {
+      await addStudent(schoolId, {
+        name: row.name,
+        label: addressLabelFromCoords(parsed.coords.lat, parsed.coords.lng),
+        lat: parsed.coords.lat,
+        lng: parsed.coords.lng,
+        mapsUrl: parsed.resolvedUrl,
+        vehicleId: null,
+        sessionIds: [],
+        contact1Name: row.contact1Name,
+        contact1Phone: row.contact1Phone,
+        contact2Name: row.contact2Name,
+        contact2Phone: row.contact2Phone,
+      });
+      imported++;
+    } catch (e) {
+      failed.push({
+        sheetRow: row.sheetRow,
+        name: row.name,
+        reason: e instanceof Error ? e.message : "Kayıt hatası.",
+      });
+    }
+  }
+
+  revalidatePath("/");
+  revalidatePath(`/admin/${schoolId}`);
+
+  return {
+    success: true,
+    imported,
+    skipped,
+    failed,
+    sheetTab,
+  };
 }
 
 export async function editStudent(schoolId: string, formData: FormData) {
