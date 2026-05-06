@@ -49,6 +49,24 @@ function bucketsToAssignments(buckets: Record<string, string[]>): Assignment[] {
   return out;
 }
 
+/** Görünüm sırası (sütunlar soldan sağa, sütun içi yukarıdan aşağı) ile çoklu taşıma sırası. */
+function orderStudentIdsForMove(
+  ids: string[],
+  group: DistributionGroup,
+  gridVehicles: Vehicle[],
+  allVehicles: Vehicle[],
+): string[] {
+  const idSet = new Set(ids);
+  const buckets = assignmentsToBuckets(group.studentAssignments, allVehicles);
+  const ordered: string[] = [];
+  for (const v of gridVehicles) {
+    for (const sid of buckets[v.id] ?? []) {
+      if (idSet.has(sid)) ordered.push(sid);
+    }
+  }
+  return ordered;
+}
+
 function getSortedGroups(distribution: DailyDistribution): { groupId: string; group: DistributionGroup }[] {
   return Object.entries(distribution)
     .map(([groupId, group]) => ({ groupId, group }))
@@ -112,7 +130,9 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
   const [suggestion, setSuggestion] = useState<VehicleCountSuggestion | null>(null);
   const [suggestionLoading, setSuggestionLoading] = useState(false);
   const [distributeWarnings, setDistributeWarnings] = useState<string[]>([]);
-  const dragRef = useRef<{ groupId: string; studentId: string } | null>(null);
+  const dragRef = useRef<{ groupId: string; studentIds: string[] } | null>(null);
+  /** Grup bazında çoklu seçim — aynı anda birden fazla öğrenciyi taşımak için */
+  const [selectedByGroup, setSelectedByGroup] = useState<Record<string, string[]>>({});
 
   const todayKey = String(new Date().getDay());
   const todayLabel = DAY_LABELS[todayKey] || "Bugün";
@@ -219,10 +239,60 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
     setSavingGroupId(null);
   }
 
-  function handleDragStart(groupId: string, studentId: string, e: React.DragEvent) {
-    dragRef.current = { groupId, studentId };
+  function toggleStudentSelected(groupId: string, studentId: string) {
+    setSelectedByGroup((prev) => {
+      const cur = new Set(prev[groupId] ?? []);
+      if (cur.has(studentId)) cur.delete(studentId);
+      else cur.add(studentId);
+      const arr = Array.from(cur);
+      const next = { ...prev };
+      if (arr.length === 0) delete next[groupId];
+      else next[groupId] = arr;
+      return next;
+    });
+  }
+
+  function selectAllInVehicleColumn(groupId: string, studentIds: string[]) {
+    if (studentIds.length === 0) return;
+    setSelectedByGroup((prev) => {
+      const cur = new Set(prev[groupId] ?? []);
+      const allSelected = studentIds.every((id) => cur.has(id));
+      if (allSelected) {
+        studentIds.forEach((id) => cur.delete(id));
+      } else {
+        studentIds.forEach((id) => cur.add(id));
+      }
+      const arr = Array.from(cur);
+      const next = { ...prev };
+      if (arr.length === 0) delete next[groupId];
+      else next[groupId] = arr;
+      return next;
+    });
+  }
+
+  function clearGroupSelection(groupId: string) {
+    setSelectedByGroup((prev) => {
+      if (!(groupId in prev)) return prev;
+      const next = { ...prev };
+      delete next[groupId];
+      return next;
+    });
+  }
+
+  function handleDragStart(
+    groupId: string,
+    studentId: string,
+    gridVehicles: Vehicle[],
+    group: DistributionGroup,
+    e: React.DragEvent,
+  ) {
+    const sel = selectedByGroup[groupId];
+    const useMulti = Boolean(sel?.length && sel.includes(studentId));
+    const rawIds = useMulti && sel ? sel : [studentId];
+    const studentIds = orderStudentIdsForMove(rawIds, group, gridVehicles, vehicles);
+    dragRef.current = { groupId, studentIds };
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", studentId);
+    e.dataTransfer.setData("text/plain", studentIds.join(","));
   }
 
   function handleDragEnd() {
@@ -233,31 +303,43 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
     const payload = dragRef.current;
     if (!payload || payload.groupId !== groupId || !distribution?.[groupId]) return;
 
-    const studentId = payload.studentId;
+    const toMove = payload.studentIds;
+    if (toMove.length === 0) return;
+
     const assignments = distribution[groupId].studentAssignments;
     const buckets = assignmentsToBuckets(assignments, vehicles);
+    const moving = new Set(toMove);
 
     for (const vid of Object.keys(buckets)) {
-      buckets[vid] = buckets[vid].filter((id) => id !== studentId);
+      buckets[vid] = buckets[vid].filter((id) => !moving.has(id));
     }
 
     const list = buckets[targetVehicleId] ?? [];
     if (beforeStudentId == null) {
-      list.push(studentId);
+      list.push(...toMove);
     } else {
-      const idx = list.indexOf(beforeStudentId);
-      if (idx === -1) list.push(studentId);
-      else list.splice(idx, 0, studentId);
+      let idx = list.indexOf(beforeStudentId);
+      if (idx === -1) list.push(...toMove);
+      else list.splice(idx, 0, ...toMove);
     }
     buckets[targetVehicleId] = list;
 
     await persistGroupAssignments(groupId, bucketsToAssignments(buckets));
     handleDragEnd();
+    clearGroupSelection(groupId);
   }
 
   async function handleRemoveFromGroup(groupId: string, studentId: string) {
     if (!distribution?.[groupId]) return;
     const assignments = distribution[groupId].studentAssignments.filter((a) => a.studentId !== studentId);
+    setSelectedByGroup((prev) => {
+      if (!prev[groupId]?.length) return prev;
+      const nextSel = prev[groupId].filter((id) => id !== studentId);
+      const next = { ...prev };
+      if (nextSel.length === 0) delete next[groupId];
+      else next[groupId] = nextSel;
+      return next;
+    });
     await persistGroupAssignments(groupId, assignments);
   }
 
@@ -517,7 +599,8 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
           defaultOpen
         >
           <p className="text-xs text-gray-600">
-            Öğrenciyi sürükleyerek başka araca taşıyın; ↑↓ ile sıra değiştirin. Kaldır bu gruptaki atamayı siler.
+            Öğrenciyi sürükleyerek başka araca taşıyın; kutucuklarla birden fazlasını seçip birlikte taşıyın. ↑↓ ile sıra
+            değiştirin. Kaldır bu gruptaki atamayı siler.
           </p>
           {getSortedGroups(distribution).map(({ groupId, group }) => {
             if (group.studentAssignments.length === 0) return null;
@@ -546,6 +629,21 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
                   </span>
                 </div>
 
+                {(selectedByGroup[groupId]?.length ?? 0) > 0 && (
+                  <div className="px-3 py-2 bg-accent/10 border-b border-accent/20 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs text-accent font-medium">
+                      {selectedByGroup[groupId]?.length} öğrenci seçili — birini sürükleyerek hepsini taşıyın
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => clearGroupSelection(groupId)}
+                      className="text-xs font-medium text-gray-400 hover:text-white"
+                    >
+                      Seçimi temizle
+                    </button>
+                  </div>
+                )}
+
                 <div className="p-3 grid gap-3 md:grid-cols-2">
                   {gridVehicles.map((v) => {
                     const ids = buckets[v.id] ?? [];
@@ -565,77 +663,111 @@ export default function DailyListEditor({ schoolId, students, vehicles, sessions
                           void handleDropOnVehicle(groupId, v.id, null);
                         }}
                       >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-medium text-gray-300">{getVehicleName(v.id)}</span>
-                          <span className={`text-xs font-semibold ${overCap ? "text-amber-400" : "text-accent"}`}>
-                            {ids.length} / {v.capacity}
-                          </span>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-xs font-medium text-gray-300 min-w-0 truncate">{getVehicleName(v.id)}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {ids.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => selectAllInVehicleColumn(groupId, ids)}
+                                className="text-[10px] font-medium text-gray-500 hover:text-accent"
+                              >
+                                Sütunu seç
+                              </button>
+                            )}
+                            <span className={`text-xs font-semibold ${overCap ? "text-amber-400" : "text-accent"}`}>
+                              {ids.length} / {v.capacity}
+                            </span>
+                          </div>
                         </div>
                         {overCap && (
                           <p className="text-[10px] text-amber-400/90 mb-2">Kapasite aşımı (manuel onay)</p>
                         )}
                         <ul className="space-y-1.5">
-                          {ids.map((studentId, idx) => (
-                            <li
-                              key={studentId}
-                              draggable={!saving}
-                              onDragStart={(e) => handleDragStart(groupId, studentId, e)}
-                              onDragEnd={handleDragEnd}
-                              onDragOver={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                e.dataTransfer.dropEffect = "move";
-                              }}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void handleDropOnVehicle(groupId, v.id, studentId);
-                              }}
-                              className="flex items-center gap-1.5 rounded-lg border border-dark-500 bg-dark-800 px-2 py-2 text-sm cursor-grab active:cursor-grabbing"
-                            >
-                              <span className="text-[10px] font-bold text-accent w-5 text-center shrink-0">{idx + 1}</span>
-                              <span className="flex-1 min-w-0 truncate text-gray-200">{getStudentName(studentId)}</span>
-                              <div className="flex items-center shrink-0 gap-0.5">
-                                <button
-                                  type="button"
-                                  disabled={saving || idx === 0}
-                                  onClick={() => void handleMoveInVehicle(groupId, v.id, studentId, "up")}
-                                  className="p-1 rounded text-gray-500 hover:text-accent disabled:opacity-20"
-                                  title="Yukarı"
+                          {ids.map((studentId, idx) => {
+                            const isSelected = selectedByGroup[groupId]?.includes(studentId) ?? false;
+                            return (
+                              <li
+                                key={studentId}
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  e.dataTransfer.dropEffect = "move";
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void handleDropOnVehicle(groupId, v.id, studentId);
+                                }}
+                                className={`flex items-stretch gap-0.5 rounded-lg border text-sm ${
+                                  isSelected ? "border-accent/45 ring-1 ring-accent/25 bg-dark-800" : "border-dark-500 bg-dark-800"
+                                }`}
+                              >
+                                <label
+                                  className="flex items-center shrink-0 pl-2 py-2 cursor-pointer"
+                                  onMouseDown={(e) => e.stopPropagation()}
                                 >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                                  </svg>
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={saving || idx >= ids.length - 1}
-                                  onClick={() => void handleMoveInVehicle(groupId, v.id, studentId, "down")}
-                                  className="p-1 rounded text-gray-500 hover:text-accent disabled:opacity-20"
-                                  title="Aşağı"
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleStudentSelected(groupId, studentId)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    disabled={saving}
+                                    className="w-3.5 h-3.5 rounded border-dark-400 text-accent focus:ring-accent"
+                                    aria-label="Öğrenciyi çoklu seçime ekle"
+                                  />
+                                </label>
+                                <div
+                                  className="flex flex-1 min-w-0 items-center gap-1.5 py-2 pr-1 cursor-grab active:cursor-grabbing"
+                                  draggable={!saving}
+                                  onDragStart={(e) => handleDragStart(groupId, studentId, gridVehicles, group, e)}
+                                  onDragEnd={handleDragEnd}
                                 >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                                  </svg>
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={saving}
-                                  onClick={() => {
-                                    if (window.confirm("Bu öğrenciyi bu grubun dağıtımından kaldırmak istiyor musunuz?")) {
-                                      void handleRemoveFromGroup(groupId, studentId);
-                                    }
-                                  }}
-                                  className="p-1 rounded text-red-400/80 hover:bg-red-500/15"
-                                  title="Kaldır"
-                                >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </li>
-                          ))}
+                                  <span className="text-[10px] font-bold text-accent w-5 text-center shrink-0">{idx + 1}</span>
+                                  <span className="flex-1 min-w-0 truncate text-gray-200">{getStudentName(studentId)}</span>
+                                </div>
+                                <div className="flex items-center shrink-0 gap-0.5 pr-1.5 py-2">
+                                  <button
+                                    type="button"
+                                    disabled={saving || idx === 0}
+                                    onClick={() => void handleMoveInVehicle(groupId, v.id, studentId, "up")}
+                                    className="p-1 rounded text-gray-500 hover:text-accent disabled:opacity-20"
+                                    title="Yukarı"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={saving || idx >= ids.length - 1}
+                                    onClick={() => void handleMoveInVehicle(groupId, v.id, studentId, "down")}
+                                    className="p-1 rounded text-gray-500 hover:text-accent disabled:opacity-20"
+                                    title="Aşağı"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={saving}
+                                    onClick={() => {
+                                      if (window.confirm("Bu öğrenciyi bu grubun dağıtımından kaldırmak istiyor musunuz?")) {
+                                        void handleRemoveFromGroup(groupId, studentId);
+                                      }
+                                    }}
+                                    className="p-1 rounded text-red-400/80 hover:bg-red-500/15"
+                                    title="Kaldır"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              </li>
+                            );
+                          })}
                         </ul>
                         {ids.length === 0 && (
                           <p className="text-xs text-gray-600 text-center py-4">Boş — öğrenci sürükleyin</p>
