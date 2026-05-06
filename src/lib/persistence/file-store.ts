@@ -1232,7 +1232,8 @@ export async function generateRouteLinkForGroup(
   const schoolCoord = `${data.school.lat},${data.school.lng}`;
 
   if (group.type === "pickup") {
-    const origin = "My+Location";
+    // "+" in query strings is often parsed as space; Google expects literal + as %2B for GPS origin token.
+    const origin = encodeURIComponent("My+Location");
     const destination = schoolCoord;
     const waypointCoords = students.map((s) => `${s.lat},${s.lng}`).join("|");
     let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
