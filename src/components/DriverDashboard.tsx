@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Student, Vehicle, DailyDistribution, DistributionGroup } from "@/lib/types";
-import { fetchDailyDistribution, fetchGroupDistribution, fetchVehicleWorkingToday, getRouteLinkForGroup } from "@/lib/actions";
+import { fetchDailyDistribution, fetchGroupDistribution, fetchVehicleWorkingToday, fetchDriverRouteDirections } from "@/lib/actions";
+import { buildGoogleMapsDrivingDirectionsUrl } from "@/lib/google-maps-directions-url";
 import { studentMapOpenUrl } from "@/lib/parse-maps-url";
 
 const DISTRIBUTION_POLL_MS = 60_000;
@@ -52,6 +53,7 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
   const [groupStudents, setGroupStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(false);
   const [routeLink, setRouteLink] = useState<string | null>(null);
+  const [routeGeoHint, setRouteGeoHint] = useState<string | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   /** Manuel işaret: bu grupta rota dışı bırakılan öğrenciler */
   const [completedStudentIds, setCompletedStudentIds] = useState<Set<string>>(() => new Set());
@@ -130,6 +132,7 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
       setGroupStudents([]);
       setCompletedStudentIds(new Set());
       setRouteLink(null);
+      setRouteGeoHint(null);
     } else {
       const gid = selectedGroupRef.current;
       if (gid) void loadGroupStudents(gid);
@@ -140,10 +143,12 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
     if (selectedGroupId) {
       loadGroupStudents(selectedGroupId);
       setRouteLink(null);
+      setRouteGeoHint(null);
     } else {
       setGroupStudents([]);
       setCompletedStudentIds(new Set());
       setRouteLink(null);
+      setRouteGeoHint(null);
     }
   }, [selectedGroupId, loadGroupStudents]);
 
@@ -210,22 +215,74 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
     };
   }, [syncDistribution]);
 
+  function openRouteInMaps(href: string) {
+    setRouteLink(href);
+    const w = window.open(href, "_blank");
+    if (!w) window.location.href = href;
+  }
+
   async function handleGenerateRoute() {
     if (!selectedGroupId) return;
     setRouteLoading(true);
+    setRouteGeoHint(null);
+
     const exclude = groupStudents.filter((s) => completedStudentIds.has(s.id)).map((s) => s.id);
-    const link = await getRouteLinkForGroup(
+    const res = await fetchDriverRouteDirections(
       schoolId,
       selectedGroupId,
       vehicle.id,
       exclude.length > 0 ? exclude : undefined,
     );
-    if (link) {
-      setRouteLink(link);
-      const w = window.open(link, "_blank");
-      if (!w) window.location.href = link;
+
+    if (!res.ok) {
+      setRouteLoading(false);
+      return;
     }
-    setRouteLoading(false);
+
+    const pickupFallback = (
+      destination: string,
+      waypointPipe: string,
+      hint?: string | null,
+    ) => {
+      openRouteInMaps(
+        buildGoogleMapsDrivingDirectionsUrl("My+Location", destination, waypointPipe || undefined),
+      );
+      if (hint) setRouteGeoHint(hint);
+      setRouteLoading(false);
+    };
+
+    if (res.data.mode === "dropoff") {
+      openRouteInMaps(res.data.url);
+      setRouteLoading(false);
+      return;
+    }
+
+    const { destination, waypointPipe } = res.data;
+
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+      pickupFallback(
+        destination,
+        waypointPipe,
+        "Bu ortam GPS kullanmayı desteklemiyor; başlangıç yaklaşık olabilir.",
+      );
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const origin = `${pos.coords.latitude},${pos.coords.longitude}`;
+        openRouteInMaps(buildGoogleMapsDrivingDirectionsUrl(origin, destination, waypointPipe || undefined));
+        setRouteLoading(false);
+      },
+      () => {
+        pickupFallback(
+          destination,
+          waypointPipe,
+          "Konum alınamadı veya izin reddedildi; yaklaşık başlangıç kullanılıyor. İzin verirseniz tam konum kullanılır.",
+        );
+      },
+      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
+    );
   }
 
   const hasDistribution = distribution && Object.keys(distribution).length > 0;
@@ -370,7 +427,7 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
                     : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
                 }`}>
                   {selectedGroup.type === "pickup"
-                    ? "Mevcut konumunuzdan öğrencileri toplayıp okula bırakır"
+                    ? "Öğrenci durakları ve okul rotası. Konum izni verirseniz başlangıç tam olarak bu cihazın GPS’idir."
                     : "Okuldan öğrencileri alıp evlerine bırakır"}
                 </div>
 
@@ -394,6 +451,10 @@ export default function DriverDashboard({ schoolId, vehicle, initialDistribution
                       ? `Rota Oluştur (${remainingStopsCount} durak)`
                       : "Rota Oluştur"}
                 </button>
+
+                {routeGeoHint && (
+                  <p className="text-xs text-amber-400/90 text-center mt-3 px-1 leading-snug">{routeGeoHint}</p>
+                )}
 
                 {routeLink && (
                   <a

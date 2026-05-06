@@ -40,6 +40,7 @@ import {
   clearDailyDistributionToday as storeClearDailyDistributionToday,
   updateDailyDistributionGroup,
   getGroupDistribution,
+  generateDriverRouteDirections,
   generateRouteLinkForGroup,
   getClassDuration,
   setClassDuration as storeSetClassDuration,
@@ -64,6 +65,7 @@ import {
   setUserPassword as storeSetUserPassword,
   deleteUser as storeDeleteUser,
 } from "./store";
+import type { DriverRouteDirections } from "./types";
 import { parseMapsUrl } from "./parse-maps-url";
 import {
   parseSpreadsheetIdFromInput,
@@ -755,6 +757,20 @@ export async function getRouteLinkForGroup(
   const g = await assertDriverOrAdminVehicle(schoolId, vehicleId);
   if (g.error) return "";
   return (await generateRouteLinkForGroup(schoolId, groupId, vehicleId, excludeStudentIds)) ?? "";
+}
+
+/** Evlerden okula rotası için destination/waypoints + mod; pickup başlangıcı istemcide GPS ile eklenir. */
+export async function fetchDriverRouteDirections(
+  schoolId: string,
+  groupId: string,
+  vehicleId: string,
+  excludeStudentIds?: string[],
+): Promise<{ ok: true; data: DriverRouteDirections } | { ok: false }> {
+  const g = await assertDriverOrAdminVehicle(schoolId, vehicleId);
+  if (g.error) return { ok: false };
+  const data = await generateDriverRouteDirections(schoolId, groupId, vehicleId, excludeStudentIds ?? undefined);
+  if (!data) return { ok: false };
+  return { ok: true, data };
 }
 
 export async function fetchClassDuration(schoolId: string) {

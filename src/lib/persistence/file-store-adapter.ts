@@ -63,6 +63,7 @@ export const fileAppStore: AppStore = {
   clearDailyDistributionToday: file.clearDailyDistributionToday,
   updateDailyDistributionGroup: file.updateDailyDistributionGroup,
   getGroupDistribution: file.getGroupDistribution,
+  generateDriverRouteDirections: file.generateDriverRouteDirections,
   generateRouteLinkForGroup: file.generateRouteLinkForGroup,
   readPasswordResetTokens: file.readPasswordResetTokens,
   writePasswordResetTokens: file.writePasswordResetTokens,

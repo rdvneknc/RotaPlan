@@ -232,6 +232,15 @@ export async function generateRouteLinkForGroup(
   return backend().generateRouteLinkForGroup(schoolId, groupId, vehicleId, excludeStudentIds);
 }
 
+export async function generateDriverRouteDirections(
+  schoolId: string,
+  groupId: string,
+  vehicleId: string,
+  excludeStudentIds?: string[] | null,
+) {
+  return backend().generateDriverRouteDirections(schoolId, groupId, vehicleId, excludeStudentIds);
+}
+
 export async function readPasswordResetTokens() {
   return backend().readPasswordResetTokens();
 }

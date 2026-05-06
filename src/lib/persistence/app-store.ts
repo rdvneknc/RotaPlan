@@ -7,6 +7,7 @@ import type {
   AppUser,
   DailyDistribution,
   SessionDistributionAssignment,
+  DriverRouteDirections,
 } from "../types";
 import type { VehicleCountSuggestion } from "../optimizer";
 import type { PasswordResetTokenRecord } from "./password-reset-tokens";
@@ -128,6 +129,12 @@ export interface AppStore {
     assignments: SessionDistributionAssignment[],
   ): Promise<{ error?: string }>;
   getGroupDistribution(schoolId: string, groupId: string, vehicleId: string): Promise<Student[]>;
+  generateDriverRouteDirections(
+    schoolId: string,
+    groupId: string,
+    vehicleId: string,
+    excludeStudentIds?: string[] | null,
+  ): Promise<DriverRouteDirections | null>;
   generateRouteLinkForGroup(
     schoolId: string,
     groupId: string,

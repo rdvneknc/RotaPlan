@@ -33,6 +33,11 @@ export type DailyDistribution = {
   [groupId: string]: DistributionGroup;
 };
 
+/** Şoför için rota bilgisi: pickup ise başlangıç `navigator.geolocation` ile eklenir. */
+export type DriverRouteDirections =
+  | { mode: "pickup"; destination: string; waypointPipe: string }
+  | { mode: "dropoff"; url: string };
+
 /** Günlük dağıtım grubunda araç–öğrenci sırası (manuel düzenleme / API). */
 export interface SessionDistributionAssignment {
   studentId: string;

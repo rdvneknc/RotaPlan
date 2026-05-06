@@ -7,7 +7,9 @@ import {
   AppUser,
   DailyDistribution,
   SessionDistributionAssignment,
+  DriverRouteDirections,
 } from "../types";
+import { buildGoogleMapsDrivingDirectionsUrl } from "../google-maps-directions-url";
 import {
   distributeStudents,
   optimizeStopOrderFromSchool,
@@ -1203,12 +1205,12 @@ export async function getGroupDistribution(schoolId: string, groupId: string, ve
     .filter((s): s is Student => !!s);
 }
 
-export async function generateRouteLinkForGroup(
+async function computeVehicleRouteDirections(
   schoolId: string,
   groupId: string,
   vehicleId: string,
   excludeStudentIds?: string[] | null,
-): Promise<string | null> {
+): Promise<DriverRouteDirections | null> {
   const data = await readSchoolData(schoolId);
   const dist = getTodayDistribution(data);
   if (!dist || !dist[groupId]) return null;
@@ -1232,24 +1234,46 @@ export async function generateRouteLinkForGroup(
   const schoolCoord = `${data.school.lat},${data.school.lng}`;
 
   if (group.type === "pickup") {
-    // "+" in query strings is often parsed as space; Google expects literal + as %2B for GPS origin token.
-    const origin = encodeURIComponent("My+Location");
-    const destination = schoolCoord;
-    const waypointCoords = students.map((s) => `${s.lat},${s.lng}`).join("|");
-    let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-    if (waypointCoords) url += `&waypoints=${waypointCoords}`;
-    return url;
+    const waypointPipe = students.map((s) => `${s.lat},${s.lng}`).join("|");
+    return { mode: "pickup", destination: schoolCoord, waypointPipe };
   }
 
-  const origin = schoolCoord;
   const last = students[students.length - 1];
   const destination = `${last.lat},${last.lng}`;
-  const waypointCoords = students.length > 1
+  const waypointPipe = students.length > 1
     ? students.slice(0, -1).map((s) => `${s.lat},${s.lng}`).join("|")
     : "";
-  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-  if (waypointCoords) url += `&waypoints=${waypointCoords}`;
-  return url;
+  const url = buildGoogleMapsDrivingDirectionsUrl(
+    schoolCoord,
+    destination,
+    waypointPipe || undefined,
+  );
+  return { mode: "dropoff", url };
+}
+
+/** Sunucu tarafı tam URL; pickup için başlangıç Google’ın “My+Location” metni (hassas değil). */
+export async function generateRouteLinkForGroup(
+  schoolId: string,
+  groupId: string,
+  vehicleId: string,
+  excludeStudentIds?: string[] | null,
+): Promise<string | null> {
+  const plan = await computeVehicleRouteDirections(schoolId, groupId, vehicleId, excludeStudentIds);
+  if (!plan) return null;
+  if (plan.mode === "pickup") {
+    return buildGoogleMapsDrivingDirectionsUrl("My+Location", plan.destination, plan.waypointPipe || undefined);
+  }
+  return plan.url;
+}
+
+/** Şoför istemcisi pickup için GPS ile `buildGoogleMapsDrivingDirectionsUrl` kullanır. */
+export async function generateDriverRouteDirections(
+  schoolId: string,
+  groupId: string,
+  vehicleId: string,
+  excludeStudentIds?: string[] | null,
+): Promise<DriverRouteDirections | null> {
+  return computeVehicleRouteDirections(schoolId, groupId, vehicleId, excludeStudentIds);
 }
 
 // ---------------------------------------------------------------------------
