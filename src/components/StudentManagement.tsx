@@ -7,6 +7,7 @@ import { studentMapOpenUrl } from "@/lib/parse-maps-url";
 import AddStudentForm from "./AddStudentForm";
 import EditStudentModal from "./EditStudentModal";
 import StudentSheetImport from "./StudentSheetImport";
+import StudentProfileCard from "./StudentProfileCard";
 
 interface Props {
   schoolId: string;
@@ -29,6 +30,7 @@ export default function StudentManagement({
 }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [profileStudent, setProfileStudent] = useState<Student | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   function getVehicleLabel(vehicleId: string | null): string | null {
@@ -113,27 +115,34 @@ export default function StudentManagement({
                   key={student.id}
                   className={`flex items-center gap-3 py-3 transition ${loadingId === student.id ? "opacity-50" : ""}`}
                 >
-                  <div className="flex-1 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setProfileStudent(student)}
+                    className="flex-1 min-w-0 text-left rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-dark-900 -mx-2 px-2 py-1 hover:bg-dark-700/60 transition cursor-pointer"
+                  >
                     <div className="flex items-center gap-2">
                       <p className="text-base font-medium text-white">{student.name}</p>
                       {vehicleLabel && (
-                        <span className="text-[10px] bg-dark-500 text-gray-300 px-1.5 py-0.5 rounded font-mono">{vehicleLabel}</span>
+                        <span className="text-[10px] bg-dark-500 text-gray-300 px-1.5 py-0.5 rounded font-mono">
+                          {vehicleLabel}
+                        </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-500 truncate flex items-center gap-1">
+                    <p className="text-sm text-gray-500 truncate flex items-center gap-1 mt-0.5">
                       <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
                       {student.label}
                     </p>
-                  </div>
+                  </button>
                   <div className="flex items-center gap-1 shrink-0">
                     {pinHref ? (
                       <a
                         href={pinHref}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                         className="p-2 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition"
                         title="Haritada Göster"
                       >
@@ -151,7 +160,11 @@ export default function StudentManagement({
                       </span>
                     )}
                     <button
-                      onClick={() => setEditingStudent(student)}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingStudent(student);
+                      }}
                       className="p-2 text-gray-500 hover:text-accent hover:bg-accent/10 rounded-lg transition"
                       title="Düzenle"
                     >
@@ -160,7 +173,11 @@ export default function StudentManagement({
                       </svg>
                     </button>
                     <button
-                      onClick={() => handleDelete(student.id, student.name)}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDelete(student.id, student.name);
+                      }}
                       className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
                       title="Sil"
                     >
@@ -176,13 +193,27 @@ export default function StudentManagement({
         </>
       )}
 
+      {profileStudent && (
+        <StudentProfileCard
+          student={profileStudent}
+          vehicles={vehicles}
+          sessions={sessions}
+          onClose={() => setProfileStudent(null)}
+          onEdit={(s) => setEditingStudent(s)}
+        />
+      )}
+
       {editingStudent && (
         <EditStudentModal
           schoolId={schoolId}
           student={editingStudent}
-          onClose={() => setEditingStudent(null)}
+          onClose={() => {
+            setEditingStudent(null);
+            setProfileStudent(null);
+          }}
           onDone={() => {
             setEditingStudent(null);
+            setProfileStudent(null);
             onRefresh();
           }}
         />
